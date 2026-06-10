@@ -66,6 +66,10 @@ export function connect(pi: ExtensionAPI, opts: UtilsClientOptions): UtilsClient
 		opts.ctx.ui.setWidget(record.key, undefined, { placement: record.placement });
 	}
 
+	function restoreFallback(record: WidgetRecord): void {
+		opts.ctx.ui.setWidget(record.key, record.factory, { placement: record.placement });
+	}
+
 	function attach(): void {
 		if (disposed || coordinated) return;
 		coordinated = true;
@@ -97,7 +101,7 @@ export function connect(pi: ExtensionAPI, opts: UtilsClientOptions): UtilsClient
 				widgets.set(widgetId(placement, key), record);
 				if (coordinated) {
 					emitRegister(record);
-				} else {
+				} else if (leases.size === 0) {
 					opts.ctx.ui.setWidget(key, factory, { placement });
 				}
 			},
@@ -117,9 +121,12 @@ export function connect(pi: ExtensionAPI, opts: UtilsClientOptions): UtilsClient
 			acquire() {
 				const token = `${clientId}-lease-${nextLeaseId++}`;
 				let released = false;
+				const wasFallbackVisible = !coordinated && leases.size === 0;
 				leases.add(token);
 				if (coordinated) {
 					pi.events.emit(EVENTS.fullscreenAcquire, { ...basePayload(clientId), token });
+				} else if (wasFallbackVisible) {
+					for (const record of widgets.values()) clearFallback(record);
 				}
 				return {
 					release() {
@@ -128,6 +135,8 @@ export function connect(pi: ExtensionAPI, opts: UtilsClientOptions): UtilsClient
 						leases.delete(token);
 						if (coordinated && !disposed) {
 							pi.events.emit(EVENTS.fullscreenRelease, { ...basePayload(clientId), token });
+						} else if (!disposed && leases.size === 0) {
+							for (const record of widgets.values()) restoreFallback(record);
 						}
 					},
 				};

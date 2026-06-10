@@ -186,6 +186,32 @@ test("fullscreen blanks, restores, stacks, releases idempotently, and clears on 
 	assert.deepEqual(renderHost(hostCtx), ["b"]);
 });
 
+test("fallback fullscreen hides and restores own widgets", () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-g-fallback" });
+	const a = textFactory("a");
+	const b = textFactory("b");
+	client.widgets.set("belowEditor", "a", a);
+	client.widgets.set("aboveEditor", "b", b);
+	assert.deepEqual([...ctx.widgets.keys()], ["belowEditor:a", "aboveEditor:b"]);
+
+	const leaseA = client.fullscreen.acquire();
+	assert.equal(ctx.widgets.size, 0);
+	const leaseB = client.fullscreen.acquire();
+	leaseA.release();
+	assert.equal(ctx.widgets.size, 0);
+	leaseA.release();
+	assert.equal(ctx.widgets.size, 0);
+	leaseB.release();
+	assert.deepEqual([...ctx.widgets.keys()], ["belowEditor:a", "aboveEditor:b"]);
+
+	const leaseC = client.fullscreen.acquire();
+	client.dispose();
+	leaseC.release();
+	assert.equal(ctx.widgets.size, 0);
+});
+
 test("host accepts older protocol payloads and ignores unknown fields", () => {
 	const bus = createBus();
 	const hostCtx = createCtx();
