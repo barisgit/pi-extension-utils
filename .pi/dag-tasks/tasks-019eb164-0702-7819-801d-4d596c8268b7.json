@@ -1,0 +1,19 @@
+{
+  "nextId": 2,
+  "tasks": [
+    {
+      "id": "1",
+      "title": "Scaffold pi-extension-utils package",
+      "description": "Create npm package host extension/client library with protocol, widget coordination, fullscreen leases, logger, tests, docs, install, verify, git commit.",
+      "status": "completed",
+      "activeForm": "Scaffolding pi-extension-utils",
+      "blocks": [],
+      "blockedBy": [],
+      "metadata": {},
+      "createdAt": 1781092590755,
+      "startedAt": 1781092590755,
+      "updatedAt": 1781093247782,
+      "completedAt": 1781093247782
+    }
+  ]
+}

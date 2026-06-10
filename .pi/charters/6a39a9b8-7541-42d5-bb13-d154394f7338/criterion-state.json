@@ -1,0 +1,69 @@
+{
+  "charterId": "6a39a9b8-7541-42d5-bb13-d154394f7338",
+  "criteria": {
+    "VAL-SCAFFOLD-PACKAGE": {
+      "outcome": "pass",
+      "lastEvidencePath": "work/_charter/evidence/2026-06-10T12-08-39-260Z/evidence.json",
+      "lastTs": "2026-06-10T12:08:39.260Z",
+      "lastSummary": "tsc --noEmit clean; package.json pi.extensions registers ./index.ts; client surface importable from src/index.ts root export.",
+      "source": "manual",
+      "recordedBy": "agent:root",
+      "because": "Ran the VAL command verbatim in this session: tsc reported no errors and the package.json pi.extensions check exited 0 (SCAFFOLD-OK)."
+    },
+    "VAL-PROTOCOL-VERSIONED": {
+      "outcome": "pass",
+      "lastEvidencePath": "work/_charter/evidence/2026-06-10T12-08-39-260Z-1/evidence.json",
+      "lastTs": "2026-06-10T12:08:39.260Z",
+      "lastSummary": "npm test passed 9/9 including 'host accepts older protocol payloads and ignores unknown fields'. All payloads in src/protocol.ts carry protocolVersion.",
+      "source": "manual",
+      "recordedBy": "agent:root",
+      "because": "Ran npm test in this session; output shows 9 pass 0 fail including the protocol-tolerance test by name."
+    },
+    "VAL-HANDSHAKE-LATE-JOIN": {
+      "outcome": "pass",
+      "lastEvidencePath": "work/_charter/evidence/2026-06-10T12-08-39-260Z-2/evidence.json",
+      "lastTs": "2026-06-10T12:08:39.260Z",
+      "lastSummary": "Both load orders covered (client-before-host and host-before-client end coordinated) plus 'repeated ready does not double attach'.",
+      "source": "manual",
+      "recordedBy": "agent:root",
+      "because": "Ran npm test in this session; 9 pass 0 fail with the named handshake tests in output."
+    },
+    "VAL-FALLBACK-NO-HOST": {
+      "outcome": "pass",
+      "lastEvidencePath": "work/_charter/evidence/2026-06-10T12-08-39-260Z-3/evidence.json",
+      "lastTs": "2026-06-10T12:08:39.260Z",
+      "lastSummary": "'no host fallback renders directly and remove clears' and 'late host upgrades fallback widgets without duplicates' pass.",
+      "source": "manual",
+      "recordedBy": "agent:root",
+      "because": "Ran npm test in this session; 9 pass 0 fail with both fallback tests visible in output."
+    },
+    "VAL-WIDGET-ORDERING": {
+      "outcome": "pass",
+      "lastEvidencePath": "work/_charter/evidence/2026-06-10T12-08-39-260Z-4/evidence.json",
+      "lastTs": "2026-06-10T12:08:39.260Z",
+      "lastSummary": "'ordering across clients and unregister removes only that client' verifies (order, insertion) sort within single host slot per placement.",
+      "source": "manual",
+      "recordedBy": "agent:root",
+      "because": "Ran npm test in this session; 9 pass 0 fail with the ordering test visible in output."
+    },
+    "VAL-FULLSCREEN-ACQUIRE-RESTORE": {
+      "outcome": "pass",
+      "lastEvidencePath": "work/_charter/evidence/2026-06-10T12-08-39-260Z-5/evidence.json",
+      "lastTs": "2026-06-10T12:08:39.260Z",
+      "lastSummary": "'fullscreen blanks, restores, stacks, releases idempotently, and clears on dispose' covers LIFO lease stack semantics.",
+      "source": "manual",
+      "recordedBy": "agent:root",
+      "because": "Ran npm test in this session; 9 pass 0 fail with the fullscreen lease test visible in output."
+    },
+    "VAL-LOGGER-ROTATION": {
+      "outcome": "pass",
+      "lastEvidencePath": "work/_charter/evidence/2026-06-10T12-08-39-260Z-6/evidence.json",
+      "lastTs": "2026-06-10T12:08:39.260Z",
+      "lastSummary": "'logger writes lines, creates dirs, rotates, and rejects path separators' passes with temp dirs.",
+      "source": "manual",
+      "recordedBy": "agent:root",
+      "because": "Ran npm test in this session; 9 pass 0 fail with the logger rotation test visible in output."
+    }
+  },
+  "lastToolWriteAt": "2026-06-10T12:08:39.260Z"
+}

@@ -3,14 +3,21 @@
 	"version": "0.1.0",
 	"description": "Shared Pi extension utilities for coordinated widgets, fullscreen leases, and logging.",
 	"type": "module",
-	"main": "./src/index.ts",
+	"main": "./dist/src/index.js",
+	"types": "./dist/src/index.d.ts",
 	"exports": {
-		".": "./src/index.ts"
+		".": {
+			"types": "./dist/src/index.d.ts",
+			"default": "./dist/src/index.js"
+		}
 	},
+	"files": ["dist", "README.md", "LICENSE"],
 	"pi": {
-		"extensions": ["./index.ts"]
+		"extensions": ["./dist/index.js"]
 	},
 	"scripts": {
+		"build": "rm -rf dist && tsc -p tsconfig.build.json",
+		"prepublishOnly": "npm run typecheck && npm test && npm run build",
 		"test": "node --test --experimental-strip-types test/**/*.test.ts",
 		"typecheck": "tsc --noEmit"
 	},

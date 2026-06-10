@@ -1,0 +1,13 @@
+{
+  "charterId": "6a39a9b8-7541-42d5-bb13-d154394f7338",
+  "criterionId": "VAL-PROTOCOL-VERSIONED",
+  "outcome": "pass",
+  "summary": "npm test passed 9/9 including 'host accepts older protocol payloads and ignores unknown fields'. All payloads in src/protocol.ts carry protocolVersion.",
+  "artifacts": [],
+  "details": {},
+  "source": "manual",
+  "recordedBy": "agent:root",
+  "because": "Ran npm test in this session; output shows 9 pass 0 fail including the protocol-tolerance test by name.",
+  "verifier": "command",
+  "ts": "2026-06-10T12:08:39.260Z"
+}
