@@ -30,6 +30,17 @@ export interface FullscreenLease {
 	release(): void;
 }
 
+/**
+ * Factory signature accepted by `ctx.ui.custom`. Typed structurally so the
+ * client does not depend on pi-tui types directly.
+ */
+export type FullscreenComponentFactory<T> = (
+	tui: unknown,
+	theme: unknown,
+	keybindings: unknown,
+	done: (result: T) => void,
+) => unknown;
+
 export interface RemindersClient {
 	upsert(intent: ReminderIntent): void;
 	remove(source: string, key: string): void;
@@ -47,6 +58,14 @@ export interface UtilsClient {
 	};
 	fullscreen: {
 		acquire(): FullscreenLease;
+	};
+	ui: {
+		/**
+		 * Run a full-screen custom UI: acquires a fullscreen lease (blanking
+		 * coordinated widgets), shows the component via `ctx.ui.custom`, and
+		 * releases the lease in a finally — even if the component throws.
+		 */
+		fullscreen<T>(factory: FullscreenComponentFactory<T>): Promise<T>;
 	};
 	reminders: RemindersClient;
 	dispose(): void;
@@ -159,6 +178,17 @@ export function connect(pi: ExtensionAPI, opts: UtilsClientOptions): UtilsClient
 						}
 					},
 				};
+			},
+		},
+		ui: {
+			async fullscreen<T>(factory: FullscreenComponentFactory<T>): Promise<T> {
+				const lease = client.fullscreen.acquire();
+				try {
+					const ui = opts.ctx.ui as { custom<R>(f: FullscreenComponentFactory<R>): Promise<R> };
+					return await ui.custom(factory);
+				} finally {
+					lease.release();
+				}
 			},
 		},
 		reminders: {

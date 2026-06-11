@@ -276,6 +276,59 @@ test("fallback fullscreen hides and restores own widgets", () => {
 	assert.equal(ctx.widgets.size, 0);
 });
 
+test("ui.fullscreen acquires a lease around ctx.ui.custom and restores after", async () => {
+	const bus = createBus();
+	const hostCtx = createCtx();
+	hostExtension(createPi(bus, hostCtx));
+	const ctx = createCtx();
+	let customCalls = 0;
+	ctx.ui.custom = async (factory) => {
+		customCalls++;
+		// the lease must already be held while the custom UI is up
+		assert.deepEqual(renderHost(hostCtx), []);
+		return "result";
+	};
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-fs" });
+	client.widgets.set("belowEditor", "w", textFactory("w"));
+	assert.deepEqual(renderHost(hostCtx), ["w"]);
+
+	const result = await client.ui.fullscreen(() => ({ render: () => [] }));
+	assert.equal(result, "result");
+	assert.equal(customCalls, 1);
+	assert.deepEqual(renderHost(hostCtx), ["w"]);
+});
+
+test("ui.fullscreen releases the lease when the custom UI throws", async () => {
+	const bus = createBus();
+	const hostCtx = createCtx();
+	hostExtension(createPi(bus, hostCtx));
+	const ctx = createCtx();
+	ctx.ui.custom = async () => {
+		throw new Error("boom");
+	};
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-fs-throw" });
+	client.widgets.set("belowEditor", "w", textFactory("w"));
+
+	await assert.rejects(() => client.ui.fullscreen(() => ({ render: () => [] })), /boom/);
+	assert.deepEqual(renderHost(hostCtx), ["w"]);
+});
+
+test("ui.fullscreen works in fallback mode: hides own widgets, restores after", async () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	ctx.ui.custom = async () => {
+		assert.equal(ctx.widgets.size, 0);
+		return 42;
+	};
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-fs-fb" });
+	client.widgets.set("belowEditor", "w", textFactory("w"));
+	assert.equal(ctx.widgets.size, 1);
+
+	const result = await client.ui.fullscreen(() => ({ render: () => [] }));
+	assert.equal(result, 42);
+	assert.equal(ctx.widgets.size, 1);
+});
+
 test("host accepts older protocol payloads and ignores unknown fields", () => {
 	const bus = createBus();
 	const hostCtx = createCtx();
