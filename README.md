@@ -22,8 +22,23 @@ const client = connect(pi, { ctx, clientId: "my-extension" });
 client.widgets.set("belowEditor", "status", (tui, theme) => component, { order: 10 });
 client.widgets.remove("belowEditor", "status");
 
+// Run a custom fullscreen UI: widgets are blanked before mount and
+// restored afterwards, even if the component throws.
+const result = await client.ui.fullscreen<string | null>(
+  (tui, theme, keybindings, done) => new MyOverlayComponent(tui, theme, done),
+);
+
+// Lower-level lease, for manual control over the blank/restore window.
 const lease = client.fullscreen.acquire();
 lease.release();
+
+// Reminders (host absorbed from pi-reminders): fire-and-forget emits;
+// list() resolves { reminders: [], count: 0 } when no host is present.
+client.reminders.upsert({ id: "my-reminder", text: "...", source: "my-extension" });
+client.reminders.remove("my-reminder");
+client.reminders.clearSource("my-extension");
+const { reminders } = await client.reminders.list();
+
 client.dispose();
 
 const log = createLogger("my-extension");
