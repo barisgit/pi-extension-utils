@@ -1,6 +1,6 @@
 {
 	"name": "pi-extension-utils",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "Shared Pi extension utilities for coordinated widgets, fullscreen leases, and logging.",
 	"type": "module",
 	"main": "./dist/src/index.js",
@@ -11,9 +11,15 @@
 			"default": "./dist/src/index.js"
 		}
 	},
-	"files": ["dist", "README.md", "LICENSE"],
+	"files": [
+		"dist",
+		"README.md",
+		"LICENSE"
+	],
 	"pi": {
-		"extensions": ["./dist/index.js"]
+		"extensions": [
+			"./dist/index.js"
+		]
 	},
 	"scripts": {
 		"build": "rm -rf dist && tsc -p tsconfig.build.json",

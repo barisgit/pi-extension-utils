@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { registerReminderHost } from "./src/reminders/index.ts";
 import {
 	basePayload,
 	EVENTS,
@@ -31,6 +32,8 @@ interface FullscreenLease {
 }
 
 export default function (pi: ExtensionAPI) {
+	registerReminderHost(pi);
+
 	const widgets = new Map<WidgetPlacement, WidgetRecord[]>();
 	const fullscreenStack: FullscreenLease[] = [];
 	let seq = 0;

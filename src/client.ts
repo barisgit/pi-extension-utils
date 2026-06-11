@@ -1,6 +1,16 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WidgetFactory, WidgetPlacement } from "./protocol.ts";
 import {
+	REMINDER_ANNOUNCE_NOW_EVENT,
+	REMINDER_CLEAR_SOURCE_EVENT,
+	REMINDER_LIST_EVENT,
+	REMINDER_REMOVE_EVENT,
+	REMINDER_UPSERT_EVENT,
+	type ReminderAnnounceNowRequest,
+	type ReminderIntent,
+	type ReminderSnapshot,
+} from "./reminders/types.ts";
+import {
 	basePayload,
 	EVENTS,
 	PROTOCOL_VERSION,
@@ -20,6 +30,14 @@ export interface FullscreenLease {
 	release(): void;
 }
 
+export interface RemindersClient {
+	upsert(intent: ReminderIntent): void;
+	remove(source: string, key: string): void;
+	clearSource(source: string): void;
+	announceNow(payload?: ReminderAnnounceNowRequest): void;
+	list(source?: string): Promise<ReminderSnapshot>;
+}
+
 export interface UtilsClient {
 	readonly clientId: string;
 	readonly mode: "fallback" | "coordinated";
@@ -30,6 +48,7 @@ export interface UtilsClient {
 	fullscreen: {
 		acquire(): FullscreenLease;
 	};
+	reminders: RemindersClient;
 	dispose(): void;
 }
 
@@ -142,6 +161,43 @@ export function connect(pi: ExtensionAPI, opts: UtilsClientOptions): UtilsClient
 				};
 			},
 		},
+		reminders: {
+			upsert(intent) {
+				if (disposed) return;
+				pi.events.emit(REMINDER_UPSERT_EVENT, intent);
+			},
+			remove(source, key) {
+				if (disposed) return;
+				pi.events.emit(REMINDER_REMOVE_EVENT, { source, id: key });
+			},
+			clearSource(source) {
+				if (disposed) return;
+				pi.events.emit(REMINDER_CLEAR_SOURCE_EVENT, { source });
+			},
+			announceNow(payload = {}) {
+				if (disposed) return;
+				pi.events.emit(REMINDER_ANNOUNCE_NOW_EVENT, payload);
+			},
+			list(source) {
+				if (disposed) return Promise.resolve(emptyReminderSnapshot());
+				let settled = false;
+				let resolveSnapshot!: (snapshot: ReminderSnapshot) => void;
+				let rejectSnapshot!: (error: unknown) => void;
+				const promise = new Promise<ReminderSnapshot>((resolve, reject) => {
+					resolveSnapshot = (snapshot) => {
+						settled = true;
+						resolve(snapshot);
+					};
+					rejectSnapshot = (error) => {
+						settled = true;
+						reject(error);
+					};
+				});
+				pi.events.emit(REMINDER_LIST_EVENT, { source, resolve: resolveSnapshot, reject: rejectSnapshot });
+				if (!settled) resolveSnapshot(emptyReminderSnapshot());
+				return promise;
+			},
+		},
 		dispose() {
 			if (disposed) return;
 			disposed = true;
@@ -166,4 +222,8 @@ function isReadyPayload(data: unknown): data is ReadyPayload {
 	if (!data || typeof data !== "object") return false;
 	const payload = data as Partial<ReadyPayload>;
 	return typeof payload.protocolVersion === "number" && payload.protocolVersion <= PROTOCOL_VERSION && typeof payload.clientId === "string";
+}
+
+function emptyReminderSnapshot(): ReminderSnapshot {
+	return { reminders: [], count: 0 };
 }

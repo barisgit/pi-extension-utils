@@ -5,7 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import hostExtension from "../index.ts";
-import { connect, createLogger, EVENTS } from "../src/index.ts";
+import {
+	connect,
+	createLogger,
+	EVENTS,
+	REMINDER_ANNOUNCE_NOW_EVENT,
+	REMINDER_CLEAR_SOURCE_EVENT,
+	REMINDER_REMOVE_EVENT,
+	REMINDER_UPSERT_EVENT,
+} from "../src/index.ts";
 
 function createBus() {
 	const handlers = new Map();
@@ -50,6 +58,7 @@ function createPi(bus, ctx) {
 		on(event, handler) {
 			if (event === "session_start") handler({ type: "session_start" }, ctx);
 		},
+		registerCommand() {},
 	};
 }
 
@@ -121,6 +130,61 @@ test("no host fallback renders directly and remove clears", () => {
 	assert.equal(ctx.widgets.size, 1);
 	client.widgets.remove("aboveEditor", "status");
 	assert.equal(ctx.widgets.size, 0);
+});
+
+test("reminders face emits host payloads and lists host snapshot", async () => {
+	const bus = createBus();
+	const hostCtx = createCtx();
+	hostExtension(createPi(bus, hostCtx));
+	const ctx = createCtx();
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-reminders" });
+	const intent = {
+		source: "test-source",
+		id: "one",
+		label: "Test",
+		text: "remember this",
+		priority: 5,
+		ttl: "session",
+	};
+
+	client.reminders.upsert(intent);
+	assert.deepEqual(bus.emitted.at(-1), { channel: REMINDER_UPSERT_EVENT, data: intent });
+	const snapshot = await client.reminders.list("test-source");
+	assert.equal(snapshot.count, 1);
+	assert.equal(snapshot.reminders.length, 1);
+	assert.deepEqual({ ...snapshot.reminders[0], createdAt: undefined, updatedAt: undefined }, {
+		...intent,
+		display: true,
+		repeatEveryTurns: undefined,
+		metadata: undefined,
+		createdAt: undefined,
+		updatedAt: undefined,
+	});
+	assert.equal(typeof snapshot.reminders[0].createdAt, "number");
+	assert.equal(typeof snapshot.reminders[0].updatedAt, "number");
+
+	client.reminders.announceNow({ source: "test-source", id: "one" });
+	assert.deepEqual(bus.emitted.at(-1), { channel: REMINDER_ANNOUNCE_NOW_EVENT, data: { source: "test-source", id: "one" } });
+	client.reminders.remove("test-source", "one");
+	assert.deepEqual(bus.emitted.at(-1), { channel: REMINDER_REMOVE_EVENT, data: { source: "test-source", id: "one" } });
+	assert.deepEqual(await client.reminders.list("test-source"), { count: 0, reminders: [] });
+
+	client.reminders.upsert({ ...intent, id: "two" });
+	client.reminders.clearSource("test-source");
+	assert.deepEqual(bus.emitted.at(-1), { channel: REMINDER_CLEAR_SOURCE_EVENT, data: { source: "test-source" } });
+	assert.deepEqual(await client.reminders.list("test-source"), { count: 0, reminders: [] });
+});
+
+test("reminders face is a safe no-host fallback", async () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-reminders-fallback" });
+
+	assert.doesNotThrow(() => client.reminders.upsert({ source: "fallback", id: "one", text: "one" }));
+	assert.doesNotThrow(() => client.reminders.remove("fallback", "one"));
+	assert.doesNotThrow(() => client.reminders.clearSource("fallback"));
+	assert.doesNotThrow(() => client.reminders.announceNow({ source: "fallback", id: "one" }));
+	assert.deepEqual(await client.reminders.list("fallback"), { count: 0, reminders: [] });
 });
 
 test("late host upgrades fallback widgets without duplicates", () => {
