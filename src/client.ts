@@ -182,9 +182,12 @@ export function connect(pi: ExtensionAPI, opts: UtilsClientOptions): UtilsClient
 		},
 		ui: {
 			async fullscreen<T>(factory: FullscreenComponentFactory<T>): Promise<T> {
+				const ui = opts.ctx.ui as { custom?<R>(f: FullscreenComponentFactory<R>): Promise<R> };
+				if (typeof ui.custom !== "function") {
+					throw new Error("pi-extension-utils: ui.fullscreen requires an interactive UI (ctx.ui.custom is unavailable)");
+				}
 				const lease = client.fullscreen.acquire();
 				try {
-					const ui = opts.ctx.ui as { custom<R>(f: FullscreenComponentFactory<R>): Promise<R> };
 					return await ui.custom(factory);
 				} finally {
 					lease.release();

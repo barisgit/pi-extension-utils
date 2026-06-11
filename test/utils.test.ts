@@ -329,6 +329,20 @@ test("ui.fullscreen works in fallback mode: hides own widgets, restores after", 
 	assert.equal(ctx.widgets.size, 1);
 });
 
+test("ui.fullscreen throws a clear error without acquiring a lease when ctx.ui.custom is unavailable", async () => {
+	const bus = createBus();
+	const hostCtx = createCtx();
+	hostExtension(createPi(bus, hostCtx));
+	const ctx = createCtx();
+	// no ctx.ui.custom: simulates non-interactive mode
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-fs-noninteractive" });
+	client.widgets.set("belowEditor", "w", textFactory("w"));
+
+	await assert.rejects(() => client.ui.fullscreen(() => ({ render: () => [] })), /ctx\.ui\.custom is unavailable/);
+	// widgets must remain visible: no lease was taken
+	assert.deepEqual(renderHost(hostCtx), ["w"]);
+});
+
 test("host accepts older protocol payloads and ignores unknown fields", () => {
 	const bus = createBus();
 	const hostCtx = createCtx();
