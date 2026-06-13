@@ -1,0 +1,165 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Read package version and npm state
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_NAME=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).name")
+          PACKAGE_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")
+          LATEST_VERSION=$(npm view "$PACKAGE_NAME" version 2>/dev/null || true)
+          EXACT_VERSION=$(npm view "$PACKAGE_NAME@$PACKAGE_VERSION" version 2>/dev/null || true)
+
+          echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "package_version=$PACKAGE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "latest_version=$LATEST_VERSION" >> "$GITHUB_OUTPUT"
+          echo "exact_version=$EXACT_VERSION" >> "$GITHUB_OUTPUT"
+
+          export PACKAGE_VERSION LATEST_VERSION EXACT_VERSION
+          SHOULD_PUBLISH=$(node <<'NODE'
+          const current = process.env.PACKAGE_VERSION;
+          const latest = process.env.LATEST_VERSION;
+          const exact = process.env.EXACT_VERSION;
+
+          function parse(version) {
+            if (!version) return null;
+            const [core, pre = ""] = version.split("-", 2);
+            const parts = core.split(".").map((part) => Number(part));
+            if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
+              throw new Error(`Unsupported semver: ${version}`);
+            }
+            return { major: parts[0], minor: parts[1], patch: parts[2], pre };
+          }
+
+          function compare(a, b) {
+            const left = parse(a);
+            const right = parse(b);
+            if (!left && !right) return 0;
+            if (left && !right) return 1;
+            if (!left && right) return -1;
+            for (const key of ["major", "minor", "patch"]) {
+              if (left[key] !== right[key]) return left[key] > right[key] ? 1 : -1;
+            }
+            if (left.pre === right.pre) return 0;
+            if (!left.pre) return 1;
+            if (!right.pre) return -1;
+            return left.pre > right.pre ? 1 : -1;
+          }
+
+          if (exact) {
+            console.log("false");
+          } else {
+            console.log(compare(current, latest) > 0 ? "true" : "false");
+          }
+          NODE
+          )
+
+          echo "should_publish=$SHOULD_PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "Package: $PACKAGE_NAME@$PACKAGE_VERSION"
+          echo "Latest on npm: ${LATEST_VERSION:-<none>}"
+          echo "Exact version on npm: ${EXACT_VERSION:-<none>}"
+          echo "Should publish: $SHOULD_PUBLISH"
+
+      - name: Skip already-published version
+        if: steps.version.outputs.should_publish != 'true'
+        run: |
+          echo "Skipping publish: ${{ steps.version.outputs.package_name }}@${{ steps.version.outputs.package_version }} is not newer than npm latest (${{ steps.version.outputs.latest_version }}) or already exists."
+
+      - name: Typecheck
+        if: steps.version.outputs.should_publish == 'true'
+        run: npm run typecheck
+
+      - name: Test
+        if: steps.version.outputs.should_publish == 'true'
+        run: npm test
+
+      - name: Build
+        if: steps.version.outputs.should_publish == 'true'
+        run: npm run build
+
+      - name: Pack preview
+        if: steps.version.outputs.should_publish == 'true'
+        run: npm pack --dry-run
+
+      - name: Publish to npm
+        if: steps.version.outputs.should_publish == 'true'
+        run: npm publish --provenance
+
+      - name: Create and push git tag
+        if: steps.version.outputs.should_publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.version.outputs.package_version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists locally"
+          else
+            git tag "$TAG"
+          fi
+          git push origin "$TAG"
+
+      - name: Generate release notes
+        if: steps.version.outputs.should_publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.version.outputs.package_version }}"
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 --match 'v*' "${TAG}^" 2>/dev/null || true)
+          if [ -n "$PREVIOUS_TAG" ]; then
+            RANGE="$PREVIOUS_TAG..$TAG"
+          else
+            RANGE="$TAG"
+          fi
+
+          {
+            echo "## ${{ steps.version.outputs.package_name }} ${{ steps.version.outputs.package_version }}"
+            echo
+            echo "Published to npm with provenance from commit \`${GITHUB_SHA}\`."
+            echo
+            echo "### Commits"
+            git log --oneline --no-merges "$RANGE" | sed 's/^/- /'
+          } > release-notes.md
+
+      - name: Create GitHub release
+        if: steps.version.outputs.should_publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.version.outputs.package_version }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+          else
+            gh release create "$TAG" \
+              --title "${{ steps.version.outputs.package_name }} ${{ steps.version.outputs.package_version }}" \
+              --notes-file release-notes.md
+          fi
