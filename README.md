@@ -42,30 +42,40 @@ const client = connect(pi, { ctx, clientId: "my-extension" });
 ## Small Example
 
 ```ts
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { connect, createLogger, paneOverlay } from "pi-extension-utils";
 
 const log = createLogger("my-extension");
-const client = connect(pi, { ctx, clientId: "my-extension" });
 
-client.widgets.set("belowEditor", "status", () => ({
-  render: () => ["my-extension: ready"],
-  invalidate: () => {},
-}), { order: 10 });
+export default function (pi: ExtensionAPI) {
+  pi.on("session_start", (_event, ctx) => {
+    const client = connect(pi, { ctx, clientId: "my-extension" });
 
-await client.ui.fullscreen(
-  paneOverlay({
-    primary: { title: "Items", mode: "cursor", rows: ["alpha", "beta"] },
-    detail: { title: "Details", rows: (overlay) => [`selected: ${overlay.selectedRow}`] },
-  }),
-);
+    client.widgets.set("belowEditor", "status", () => ({
+      render: () => ["my-extension: ready"],
+      invalidate: () => {},
+    }), { order: 10 });
 
-client.reminders.upsert({
-  source: "my-extension",
-  id: "state",
-  text: "Remember the current extension state.",
-});
+    client.reminders.upsert({
+      source: "my-extension",
+      id: "state",
+      text: "Remember the current extension state.",
+    });
+  });
 
-log.info("started");
+  pi.registerCommand("my-dashboard", {
+    description: "Open my extension dashboard",
+    handler: async (_args, ctx) => {
+      const client = connect(pi, { ctx, clientId: "my-extension" });
+      await client.ui.fullscreen(paneOverlay({
+        primary: { title: "Items", mode: "cursor", rows: ["alpha", "beta"] },
+        detail: { title: "Details", rows: (o) => [`selected: ${o.selectedRow}`] },
+      }));
+    },
+  });
+
+  log.info("registered");
+}
 ```
 
 ## Docs
