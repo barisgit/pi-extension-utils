@@ -32,6 +32,10 @@
 	"keywords": [],
 	"author": "",
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/barisgit/pi-extension-utils"
+	},
 	"peerDependencies": {
 		"@earendil-works/pi-agent-core": "*",
 		"@earendil-works/pi-ai": "*",
