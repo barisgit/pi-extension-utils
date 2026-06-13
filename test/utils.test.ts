@@ -1,6 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -14,6 +14,7 @@ import {
 	REMINDER_REMOVE_EVENT,
 	REMINDER_UPSERT_EVENT,
 } from "../src/index.ts";
+import { utilsConfig } from "../src/utils-config.ts";
 
 function createBus() {
 	const handlers = new Map();
@@ -60,6 +61,28 @@ function createPi(bus, ctx) {
 		},
 		registerCommand() {},
 	};
+}
+
+function setAgentDir(agentDir) {
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	return () => {
+		if (previousAgentDir === undefined) {
+			delete process.env.PI_CODING_AGENT_DIR;
+		} else {
+			process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		}
+		utilsConfig.reload();
+	};
+}
+
+function writeCorruptUtilsConfig(agentDir) {
+	mkdirSync(join(agentDir, "config"), { recursive: true });
+	writeFileSync(join(agentDir, "config", "utils.jsonc"), `{
+	"logging": { "level": "warn" },
+	"reminders": { "debugShowAllInTui": false, }
+`);
+	assert.throws(() => utilsConfig.reload(), /Invalid JSONC/);
 }
 
 function textFactory(text) {
@@ -363,17 +386,110 @@ test("host accepts older protocol payloads and ignores unknown fields", () => {
 	assert.deepEqual(renderHost(hostCtx), ["old"]);
 });
 
-test("logger writes lines, creates dirs, rotates, and rejects path separators", () => {
+test("corrupt utils config does not stop widget host registration", () => {
+	const agentDir = mkdtempSync(join(tmpdir(), "pi-extension-utils-agent-"));
+	const restoreAgentDir = setAgentDir(agentDir);
+	try {
+		writeCorruptUtilsConfig(agentDir);
+		const bus = createBus();
+		const clientCtx = createCtx();
+		const client = connect(createPi(bus, clientCtx), { ctx: clientCtx, clientId: "client-corrupt-config" });
+		client.widgets.set("belowEditor", "status", textFactory("survives"));
+
+		const hostCtx = createCtx();
+		assert.doesNotThrow(() => hostExtension(createPi(bus, hostCtx)));
+		assert.equal(client.mode, "coordinated");
+		assert.deepEqual(renderHost(hostCtx), ["survives"]);
+	} finally {
+		restoreAgentDir();
+	}
+});
+
+test("logger uses utils config defaults when options omit logger settings", () => {
+	const agentDir = mkdtempSync(join(tmpdir(), "pi-extension-utils-agent-"));
+	const logDir = mkdtempSync(join(tmpdir(), "pi-extension-utils-log-"));
+	const restoreAgentDir = setAgentDir(agentDir);
+	try {
+		utilsConfig.reload();
+		mkdirSync(join(agentDir, "config"), { recursive: true });
+		writeFileSync(join(agentDir, "config", "utils.jsonc"), `{
+	"logging": {
+		"level": "warn",
+		"maxFiles": 1,
+		"maxBytes": 70
+	},
+	"reminders": {
+		"debugShowAllInTui": false
+	}
+}
+`);
+		utilsConfig.reload();
+		const logger = createLogger("configured", { dir: logDir });
+		logger.info("hidden info");
+		logger.warn("first warning that rotates");
+		logger.error("second error that rotates");
+		const file = join(logDir, "configured.log");
+		const rotated = join(logDir, "configured.log.1");
+		assert.equal(existsSync(file), true);
+		assert.equal(existsSync(rotated), true);
+		assert.match(readFileSync(file, "utf8"), /error second error/);
+		assert.match(readFileSync(rotated, "utf8"), /warn first warning/);
+		assert.doesNotMatch(`${readFileSync(file, "utf8")}${readFileSync(rotated, "utf8")}`, /hidden info/);
+	} finally {
+		restoreAgentDir();
+	}
+});
+
+test("logger falls back to defaults when utils config is corrupt", () => {
+	const agentDir = mkdtempSync(join(tmpdir(), "pi-extension-utils-agent-"));
+	const logDir = mkdtempSync(join(tmpdir(), "pi-extension-utils-log-"));
+	const restoreAgentDir = setAgentDir(agentDir);
+	try {
+		writeCorruptUtilsConfig(agentDir);
+		const logger = createLogger("corrupt", { dir: logDir });
+		logger.info("still writes with defaults");
+		assert.match(readFileSync(join(logDir, "corrupt.log"), "utf8"), /info still writes with defaults/);
+	} finally {
+		restoreAgentDir();
+	}
+});
+
+test("logger writes lines, creates dirs, rotates, filters levels, and rejects path separators", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-extension-utils-"));
-	const logger = createLogger("test", { dir, maxBytes: 70 });
+	const logger = createLogger("test", { dir, maxBytes: 70, maxFiles: 2, level: "info" });
+	logger.debug("hidden debug");
 	logger.info("first message that should fit");
 	logger.warn("second message that should rotate");
+	logger.error("third message that should rotate again");
 	const file = join(dir, "test.log");
-	const rotated = join(dir, "test.log.1");
+	const firstRotated = join(dir, "test.log.1");
+	const secondRotated = join(dir, "test.log.2");
 	assert.equal(existsSync(file), true);
-	assert.equal(existsSync(rotated), true);
-	assert.match(readFileSync(file, "utf8"), /warn second message/);
-	assert.match(readFileSync(rotated, "utf8"), /info first message/);
+	assert.equal(existsSync(firstRotated), true);
+	assert.equal(existsSync(secondRotated), true);
+	assert.match(readFileSync(file, "utf8"), /error third message/);
+	assert.match(readFileSync(firstRotated, "utf8"), /warn second message/);
+	assert.match(readFileSync(secondRotated, "utf8"), /info first message/);
+	assert.doesNotMatch(`${readFileSync(file, "utf8")}${readFileSync(firstRotated, "utf8")}${readFileSync(secondRotated, "utf8")}`, /hidden debug/);
+	assert.equal(logger.isEnabled("debug"), false);
+	logger.setLevel("debug");
+	assert.equal(logger.isEnabled("debug"), true);
 	assert.throws(() => createLogger("bad/name", { dir }), /path separators/);
 	assert.throws(() => createLogger("bad\\name", { dir }), /path separators/);
+});
+
+test("logger supports silent level and maxBytes zero", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-extension-utils-"));
+	const silent = createLogger("silent", { dir, level: "silent" });
+	silent.error("hidden");
+	assert.equal(silent.isEnabled("error"), false);
+	assert.equal(existsSync(join(dir, "silent.log")), false);
+
+	const noRotate = createLogger("no-rotate", { dir, maxBytes: 0, maxFiles: 1, level: "debug" });
+	noRotate.info("first message that would rotate if maxBytes were active");
+	noRotate.error("second message that would rotate if maxBytes were active");
+	assert.equal(existsSync(join(dir, "no-rotate.log")), true);
+	assert.equal(existsSync(join(dir, "no-rotate.log.1")), false);
+	assert.match(readFileSync(join(dir, "no-rotate.log"), "utf8"), /first message/);
+	assert.match(readFileSync(join(dir, "no-rotate.log"), "utf8"), /second message/);
 });

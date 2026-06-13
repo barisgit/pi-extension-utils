@@ -1,14 +1,16 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { expect } from "./reminders-expect.ts";
 
-import { registerReminderHost } from "../src/reminders/index.ts";
+import { registerReminderHost } from "../src/reminders/host.ts";
 import {
+	LEGACY_REMINDER_MESSAGE_CUSTOM_TYPE,
 	REMINDER_ANNOUNCE_NOW_EVENT,
 	REMINDER_CLEAR_SOURCE_EVENT,
 	REMINDER_LIST_EVENT,
+	REMINDER_MESSAGE_CUSTOM_TYPE,
 	REMINDER_REMOVE_EVENT,
 	REMINDER_UPSERT_EVENT,
 } from "../src/reminders/types.ts";
@@ -134,7 +136,7 @@ describe("pi-reminders extension integration", () => {
 
 		expect(result).toEqual({
 			message: {
-				customType: "pi-reminders",
+				customType: REMINDER_MESSAGE_CUSTOM_TYPE,
 				content: "<system-reminder>\nDCP: compress now\nTasks: 2 ready tasks\n</system-reminder>",
 				display: true,
 				details: {
@@ -145,8 +147,10 @@ describe("pi-reminders extension integration", () => {
 			},
 		});
 
-		const renderer = pi.renderers.get("pi-reminders");
+		const renderer = pi.renderers.get(REMINDER_MESSAGE_CUSTOM_TYPE);
+		const legacyRenderer = pi.renderers.get(LEGACY_REMINDER_MESSAGE_CUSTOM_TYPE);
 		expect(renderer).toBeDefined();
+		expect(legacyRenderer).toBeDefined();
 		const lines = renderer!((result as any).message, {}, mockTheme).render(80).join("\n");
 		expect(lines).toContain("DCP: compress now");
 		expect(lines).toContain("Tasks: 2 ready tasks");
@@ -162,7 +166,7 @@ describe("pi-reminders extension integration", () => {
 		const pi = new MockPi();
 		registerReminderHost(pi as any);
 
-		const renderer = pi.renderers.get("pi-reminders");
+		const renderer = pi.renderers.get(LEGACY_REMINDER_MESSAGE_CUSTOM_TYPE);
 		expect(renderer).toBeDefined();
 		const lines = renderer!({
 			content: "<system-reminder>\nReminder: inspect injected reminder\n</system-reminder>",
@@ -215,7 +219,7 @@ describe("pi-reminders extension integration", () => {
 		expect(pi.sentMessages).toEqual([
 			{
 				message: {
-					customType: "pi-reminders",
+					customType: REMINDER_MESSAGE_CUSTOM_TYPE,
 					content: "<system-reminder>\nDCP: compress now\nContext: 68k / 200k tokens (34%).\n</system-reminder>",
 					display: true,
 					details: {
@@ -305,8 +309,11 @@ describe("pi-reminders extension integration", () => {
 
 	test("/reminders command saves debug show-all setting", async () => {
 		const previous = process.env.PI_REMINDERS_DEBUG;
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 		delete process.env.PI_REMINDERS_DEBUG;
 		const cwd = mkdtempSync(join(tmpdir(), "pi-reminders-test-"));
+		const agentDir = mkdtempSync(join(tmpdir(), "pi-reminders-agent-"));
+		process.env.PI_CODING_AGENT_DIR = agentDir;
 		try {
 			const pi = new MockPi();
 			registerReminderHost(pi as any);
@@ -336,12 +343,19 @@ describe("pi-reminders extension integration", () => {
 					},
 				},
 			});
+			expect(readFileSync(join(agentDir, "config", "utils.jsonc"), "utf8")).toContain('"debugShowAllInTui": true');
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
+			rmSync(agentDir, { recursive: true, force: true });
 			if (previous === undefined) {
 				delete process.env.PI_REMINDERS_DEBUG;
 			} else {
 				process.env.PI_REMINDERS_DEBUG = previous;
+			}
+			if (previousAgentDir === undefined) {
+				delete process.env.PI_CODING_AGENT_DIR;
+			} else {
+				process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 			}
 		}
 	});
@@ -382,7 +396,7 @@ describe("pi-reminders extension integration", () => {
 			repeatEveryTurns: 2,
 		});
 
-		expect((await pi.trigger("before_agent_start", {}, openAiCtx))[0]).toMatchObject({ message: { customType: "pi-reminders" } });
+		expect((await pi.trigger("before_agent_start", {}, openAiCtx))[0]).toMatchObject({ message: { customType: REMINDER_MESSAGE_CUSTOM_TYPE } });
 		await pi.trigger("turn_start");
 		expect(await pi.trigger("context", { messages: [] }, openAiCtx)).toEqual([undefined]);
 		expect(pi.sentMessages).toHaveLength(0);
@@ -391,7 +405,7 @@ describe("pi-reminders extension integration", () => {
 		expect(pi.sentMessages).toEqual([
 			{
 				message: {
-					customType: "pi-reminders",
+					customType: REMINDER_MESSAGE_CUSTOM_TYPE,
 					content: "<system-reminder>\nTasks: 2 ready tasks\n</system-reminder>",
 					display: true,
 					details: { reminderCount: 1, sources: ["pi-dag-tasks"], displayText: "Tasks: 2 ready tasks" },
@@ -435,7 +449,7 @@ describe("pi-reminders extension integration", () => {
 		expect(notifications).toEqual([{ message: "Reminder added", level: "info" }]);
 		expect(result).toMatchObject({
 			message: {
-				customType: "pi-reminders",
+				customType: REMINDER_MESSAGE_CUSTOM_TYPE,
 				content: "<system-reminder>\nReminder: inspect injected reminder\n</system-reminder>",
 				details: { displayText: "Reminder: inspect injected reminder" },
 			},

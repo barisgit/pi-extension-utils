@@ -1,3 +1,7 @@
+export const REMINDER_MESSAGE_CUSTOM_TYPE = "pi-extension-utils:reminders";
+export const LEGACY_REMINDER_MESSAGE_CUSTOM_TYPE = "pi-reminders";
+export const DEBUG_REMINDER_SOURCE = "pi-extension-utils";
+
 export const REMINDER_UPSERT_EVENT = "reminder:upsert";
 export const REMINDER_REMOVE_EVENT = "reminder:remove";
 export const REMINDER_CLEAR_SOURCE_EVENT = "reminder:clear-source";

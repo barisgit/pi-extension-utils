@@ -1,28 +1,12 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { Type, type Static } from "typebox";
 
-export interface RemindersConfig {
-	debugShowAllInTui?: boolean;
-}
+export const remindersConfigSchema = Type.Object({
+	debugShowAllInTui: Type.Boolean({
+		default: false,
+		description: "Show reminders with display:false in the transcript UI for debugging.",
+	}),
+}, {
+	description: "Reminder host settings.",
+});
 
-export function configPath(cwd: string): string {
-	return join(cwd, ".pi", "reminders", "reminders-config.json");
-}
-
-export function loadConfig(cwd: string): RemindersConfig {
-	try {
-		const parsed = JSON.parse(readFileSync(configPath(cwd), "utf8"));
-		if (!parsed || typeof parsed !== "object") return {};
-		return {
-			debugShowAllInTui: typeof parsed.debugShowAllInTui === "boolean" ? parsed.debugShowAllInTui : undefined,
-		};
-	} catch {
-		return {};
-	}
-}
-
-export function saveConfig(config: RemindersConfig, cwd: string): void {
-	const filePath = configPath(cwd);
-	mkdirSync(dirname(filePath), { recursive: true });
-	writeFileSync(filePath, JSON.stringify(config, null, 2));
-}
+export type RemindersConfig = Static<typeof remindersConfigSchema>;

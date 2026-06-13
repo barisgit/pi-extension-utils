@@ -71,13 +71,18 @@ See [reminders.md](reminders.md).
 ## Logger
 
 ```ts
-const log = createLogger("my-extension");
+const log = createLogger("my-extension", {
+  level: "info",
+  maxFiles: 5,
+});
+
+log.debug("hidden at info level");
 log.info("started");
 log.warn("slow path");
 log.error("failed");
 ```
 
-Default path: `getAgentDir()/log/my-extension.log`.
+`createLogger(name)` writes to `getAgentDir()/log/<name>.log` by default. `level` is typed as `"debug" | "info" | "warn" | "error" | "silent"`; `maxFiles` controls retained rotations (`.1`, `.2`, ...). If `level`, `maxFiles`, or `maxBytes` are omitted, the value comes from `getAgentDir()/config/utils.jsonc` `logging` defaults. Explicit options always win.
 
 Override when needed:
 

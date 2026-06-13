@@ -83,6 +83,7 @@ export default function (pi: ExtensionAPI) {
 | Topic | Link |
 |---|---|
 | Client APIs | [docs/client.md](docs/client.md) |
+| Config files | [docs/config.md](docs/config.md) |
 | Widget coordinator | [docs/widgets.md](docs/widgets.md) |
 | Pane overlays | [docs/pane-overlay.md](docs/pane-overlay.md) |
 | Reminders | [docs/reminders.md](docs/reminders.md) |
@@ -94,6 +95,7 @@ See [examples/](examples/).
 | Example | Shows |
 |---|---|
 | [`widget-coordinator.ts`](examples/widget-coordinator.ts) | Ordered widgets through the coordinator |
+| [`config.ts`](examples/config.ts) | Extension-owned JSON/JSONC config |
 | [`pane-overlay.ts`](examples/pane-overlay.ts) | Fullscreen master/detail dashboard |
 | [`reminders.ts`](examples/reminders.ts) | Upsert/list/clear reminders |
 | [`logger.ts`](examples/logger.ts) | Namespaced logger |

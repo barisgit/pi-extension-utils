@@ -29,6 +29,13 @@ export function expect<T>(actual: T) {
 		toMatch(expected: RegExp): void {
 			assert.match(String(actual), expected);
 		},
+		toThrow(expected?: RegExp): void {
+			if (!expected) {
+				assert.throws(actual as () => unknown);
+				return;
+			}
+			assert.throws(actual as () => unknown, (error: unknown) => expected.test(String((error as Error).message)));
+		},
 		get not() {
 			return {
 				toBe(expected: unknown): void {

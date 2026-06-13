@@ -1,4 +1,4 @@
-import type { FullscreenComponentFactory } from "./client.ts";
+import type { FullscreenComponentFactory } from "../ui/client.ts";
 import { dispatchNavKeys } from "./key-dispatch.ts";
 import {
 	computeFixedSidebarLayout,
@@ -14,7 +14,7 @@ import {
 	pageScrollOffset,
 	resizeSplitPane,
 	type PaneDirection,
-} from "./pane-state.ts";
+} from "./state.ts";
 import {
 	boxRow,
 	clipStyled,
@@ -25,7 +25,7 @@ import {
 	titledBottomSegment,
 	titledTopSegment,
 	type ChromeTheme,
-} from "./tui-chrome.ts";
+} from "./chrome.ts";
 import { matchesKey } from "@earendil-works/pi-tui";
 
 type MatchKey = Parameters<typeof matchesKey>[1];

@@ -35,6 +35,30 @@ client.reminders.upsert({
 | `session` | Survives until session reset/shutdown |
 | `persistent` | Survives across sessions |
 
+## Host config
+
+The bundled reminder host stores package config in:
+
+```txt
+getAgentDir()/config/utils.jsonc
+```
+
+```jsonc
+{
+  "logging": {
+    "level": "info",
+    "maxFiles": 3,
+    "maxBytes": 1048576
+  },
+  "reminders": {
+    // Show reminders with display:false in the transcript UI for debugging.
+    "debugShowAllInTui": false
+  }
+}
+```
+
+Use `/reminders` to toggle the debug display setting from Pi.
+
 ## Rules
 
 - Keep `text` short.
