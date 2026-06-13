@@ -49,8 +49,8 @@ const result = await client.ui.fullscreen(
 const lease = client.fullscreen.acquire();
 lease.release();
 
-// Reminders (host absorbed from pi-reminders): fire-and-forget emits;
-// list() resolves { reminders: [], count: 0 } when no host is present.
+// Reminders: fire-and-forget emits; list() resolves
+// { reminders: [], count: 0 } when no host is present.
 client.reminders.upsert({ id: "my-reminder", text: "...", source: "my-extension" });
 client.reminders.remove("my-reminder");
 client.reminders.clearSource("my-extension");
