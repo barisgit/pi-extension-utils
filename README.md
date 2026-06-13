@@ -83,6 +83,7 @@ export default function (pi: ExtensionAPI) {
 | Topic | Link |
 |---|---|
 | Client APIs | [docs/client.md](docs/client.md) |
+| Widget coordinator | [docs/widgets.md](docs/widgets.md) |
 | Pane overlays | [docs/pane-overlay.md](docs/pane-overlay.md) |
 | Reminders | [docs/reminders.md](docs/reminders.md) |
 
