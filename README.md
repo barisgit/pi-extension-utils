@@ -39,6 +39,35 @@ const client = connect(pi, { ctx, clientId: "my-extension" });
 | Reminders | An extension needs durable model-visible guidance without mutating prompts |
 | Logger | You need namespaced rotating logs |
 
+## Small Example
+
+```ts
+import { connect, createLogger, paneOverlay } from "pi-extension-utils";
+
+const log = createLogger("my-extension");
+const client = connect(pi, { ctx, clientId: "my-extension" });
+
+client.widgets.set("belowEditor", "status", () => ({
+  render: () => ["my-extension: ready"],
+  invalidate: () => {},
+}), { order: 10 });
+
+await client.ui.fullscreen(
+  paneOverlay({
+    primary: { title: "Items", mode: "cursor", rows: ["alpha", "beta"] },
+    detail: { title: "Details", rows: (overlay) => [`selected: ${overlay.selectedRow}`] },
+  }),
+);
+
+client.reminders.upsert({
+  source: "my-extension",
+  id: "state",
+  text: "Remember the current extension state.",
+});
+
+log.info("started");
+```
+
 ## Docs
 
 | Topic | Link |
