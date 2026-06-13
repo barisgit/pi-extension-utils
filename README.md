@@ -16,7 +16,7 @@ The host owns one real widget per placement and composes registered sub-widgets 
 ## API sketch
 
 ```ts
-import { connect, createLogger } from "pi-extension-utils";
+import { connect, createLogger, paneOverlay } from "pi-extension-utils";
 
 const client = connect(pi, { ctx, clientId: "my-extension" });
 client.widgets.set("belowEditor", "status", (tui, theme) => component, { order: 10 });
@@ -26,6 +26,23 @@ client.widgets.remove("belowEditor", "status");
 // restored afterwards, even if the component throws.
 const result = await client.ui.fullscreen<string | null>(
   (tui, theme, keybindings, done) => new MyOverlayComponent(tui, theme, done),
+);
+
+// Opinionated master/detail pane overlay helper with built-in key handling.
+const result = await client.ui.fullscreen(
+  paneOverlay<string, string>({
+    primary: {
+      mode: "cursor",
+      rows: ["one", "two", "three"],
+      renderRow: (row) => row,
+      onSelectionChange: (row) => console.log("selected", row),
+    },
+    detail: {
+      title: "Details",
+      rows: (ctx) => [`Selected: ${ctx.selectedRow}`],
+    },
+    legendPlacement: "footer",
+  }),
 );
 
 // Lower-level lease, for manual control over the blank/restore window.

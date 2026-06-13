@@ -142,28 +142,36 @@ export function titledTopSegment(theme: ChromeTheme, opts: TitledTopSegmentOptio
 		const fillDashes = Math.max(1, width - labelLen - 3);
 		return clipStyled(`${dash(1)} ${labelStyled} ${dash(fillDashes)}`, width);
 	}
+	const width = Math.max(0, opts.width);
+	if (width <= 0) return "";
 	const labelColor = opts.labelColor ?? "text";
 	const tailColor = opts.tailColor ?? "dim";
-	// Reserve at least `─ ` + label + ` ─` (4 chars) and 1 dash on each side of the tail when present.
-	const labelBudget = opts.width <= 4 ? 0 : opts.width - 4;
+	const tailPlain = opts.tailPlain ?? opts.tail ?? "";
+	const rawTailRendered = opts.tailRendered ?? (opts.tail !== undefined ? theme.fg(tailColor, opts.tail) : "");
+	const tailLen = visibleWidth(tailPlain);
+	// With a tail, the minimum chrome is:
+	// `─ ` + label + ` ` + `─` + ` ` + tail + ` ` + `─` = label + tail + 7.
+	// The previous math reserved only 6 columns, so long label+tail combinations
+	// could render one column too wide and crash Pi's TUI at terminal width.
+	const tailFits = tailLen > 0 && width >= tailLen + 7;
+	const labelBudget = tailFits ? Math.max(0, width - tailLen - 7) : Math.max(0, width - 3);
 	// Defensive: callers occasionally pass undefined labels for transient/legacy
 	// runs that lack agent+mode+label; treat as empty rather than crashing pi.
-	const labelText = truncateToWidth(opts.label ?? "", labelBudget);
+	const rawLabel = opts.label ?? "";
+	const labelText = truncateToWidth(rawLabel, labelBudget, "").replace(/\u001b\[[0-9;]*m/g, "");
 	const labelStyled = opts.labelBold && theme.bold
 		? theme.bold(theme.fg(labelColor, labelText))
 		: theme.fg(labelColor, labelText);
-	const tailPlain = opts.tailPlain ?? opts.tail ?? "";
-	const tailRendered = opts.tailRendered ?? (opts.tail !== undefined ? theme.fg(tailColor, opts.tail) : "");
 	const labelLen = visibleWidth(labelText);
-	const tailLen = visibleWidth(tailPlain);
-	// Layout with tail: `─ <label> ──…── <tail> ─` => fixed = 6 + labelLen + tailLen.
-	// Layout without tail: `─ <label> ──…────`     => fixed = 3 + labelLen (one space + label + space).
-	if (tailLen > 0) {
-		const fillDashes = Math.max(1, opts.width - (labelLen + tailLen + 6));
-		return `${dash(1)} ${labelStyled} ${dash(fillDashes)} ${tailRendered} ${dash(1)}`;
+	// Layout with tail: `─ <label> ──…── <tail> ─`.
+	// Layout without tail: `─ <label> ──…────`.
+	if (tailFits) {
+		const tailRendered = visibleWidth(rawTailRendered) > tailLen ? clipStyled(rawTailRendered, tailLen) : rawTailRendered;
+		const fillDashes = Math.max(1, width - (labelLen + tailLen + 6));
+		return clipStyled(`${dash(1)} ${labelStyled} ${dash(fillDashes)} ${tailRendered} ${dash(1)}`, width);
 	}
-	const fillDashes = Math.max(1, opts.width - (labelLen + 3));
-	return `${dash(1)} ${labelStyled} ${dash(fillDashes)}`;
+	const fillDashes = Math.max(0, width - (labelLen + 3));
+	return clipStyled(`${dash(1)} ${labelStyled} ${dash(fillDashes)}`, width);
 }
 
 /**

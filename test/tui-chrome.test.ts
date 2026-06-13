@@ -50,7 +50,8 @@ test("clipStyled and box rows handle width edge cases", () => {
 test("titled segments and flat rule match expected chrome output", () => {
 	assert.equal(titledTopSegment(theme, { width: 12, label: "Left" }), "─ Left ─────");
 	assert.equal(titledTopSegment(theme, { width: 20, label: "Run", tail: "[ok]" }), "─ Run ─────── [ok] ─");
-	assert.equal(titledTopSegment(theme, { width: 4, label: "abcdef" }), "─  ─");
+	assert.equal(titledTopSegment(theme, { width: 4, label: "abcdef" }), "─ a ");
+	assert.equal(visibleWidth(titledTopSegment(theme, { width: 20, label: "1234567890", tail: "[ok]" })), 20);
 	assert.equal(titledBottomSegment(theme, 10, "1/3", false), "─ 1/3 ────");
 	assert.equal(titledBottomSegment(theme, 5, "abcdef", true), "─ \u001b[0m..\u001b[0m ");
 	assert.equal(titledBottomSegment(theme, 4, "", false), "────");

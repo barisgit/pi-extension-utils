@@ -5,3 +5,4 @@ export * from "./pane-state.ts";
 export * from "./protocol.ts";
 export * from "./reminders/types.ts";
 export * from "./tui-chrome.ts";
+export * from "./pane-overlay.ts";
