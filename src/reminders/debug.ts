@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { deriveLabel } from "./renderer.ts";
 import type { ReminderSnapshot } from "./types.ts";
 
-const DEBUG_LOG_PATH = join(homedir(), ".pi", "log", "reminders.jsonl");
+const DEBUG_LOG_PATH = join(getAgentDir(), "log", "reminders.jsonl");
 
 export interface ReminderCacheDiagnosticsInput {
 	payload?: unknown;

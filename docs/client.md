@@ -74,5 +74,13 @@ See [reminders.md](reminders.md).
 const log = createLogger("my-extension");
 log.info("started");
 log.warn("slow path");
-log.error("failed", { reason: "..." });
+log.error("failed");
+```
+
+Default path: `getAgentDir()/log/my-extension.log`.
+
+Override when needed:
+
+```ts
+createLogger("my-extension", { dir: "/tmp/my-extension-logs", maxBytes: 256 * 1024 });
 ```

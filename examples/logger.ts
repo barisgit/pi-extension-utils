@@ -5,7 +5,7 @@ const log = createLogger("example-extension");
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
-    log.info("session started", { cwd: ctx.cwd });
+    log.info(`session started cwd=${ctx.cwd}`);
   });
 
   pi.registerCommand("example-log", {

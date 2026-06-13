@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { getAgentDir } from "@earendil-works/pi-coding-agent";
 
 export interface LoggerOptions {
 	dir?: string;
@@ -21,7 +21,7 @@ export function createLogger(ns: string, opts: LoggerOptions = {}): Logger {
 	if (!ns || ns.includes("/") || ns.includes("\\")) {
 		throw new Error("Logger namespace must not contain path separators");
 	}
-	const dir = opts.dir ?? join(homedir(), ".pi", "logs");
+	const dir = opts.dir ?? join(getAgentDir(), "log");
 	const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
 	const file = join(dir, `${ns}.log`);
 	mkdirSync(dirname(file), { recursive: true });
