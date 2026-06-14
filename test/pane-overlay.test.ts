@@ -291,6 +291,67 @@ test("primary legend placement consumes primary viewport but not detail viewport
 	assert.ok(lines[10].includes("d-9"));
 });
 
+test("primary info zone renders between list and primary legend", () => {
+	const { render } = mount(baseOptions({
+		height: 12,
+		legendPlacement: "primary",
+		primary: {
+			mode: "cursor",
+			rows: ["active", "done"],
+			renderRow: (row) => String(row),
+			infoTitle: "meta",
+			info: (ctx) => [`info:${ctx.selectedRow}`],
+		},
+		detail: { rows: () => Array.from({ length: 12 }, (_, i) => `d-${i}`), title: "Detail" },
+	}));
+
+	const lines = render();
+	const body = lines.slice(1, 13);
+	assert.ok(body[0].includes("active"));
+	assert.ok(body.some((line) => line.includes("meta")));
+	assert.ok(body.some((line) => line.includes("info:active")));
+	const infoIndex = body.findIndex((line) => line.includes("info:active"));
+	const legendIndex = body.findIndex((line) => line.includes("actions"));
+	assert.ok(infoIndex > 0);
+	assert.ok(legendIndex > infoIndex);
+	// Detail keeps the full body height while the primary pane is subdivided.
+	assert.ok(lines[12].includes("d-11"));
+});
+
+test("initial selection, separator rows, row widths, title tails, and onRender are exposed", () => {
+	let renders = 0;
+	const { component, render } = mount(baseOptions<undefined, string>({
+		height: 5,
+		primary: {
+			mode: "cursor",
+			rows: ["active", { kind: "separator", label: "done" }, "archived"],
+			selectionKey: (row) => row,
+			initialSelectionKey: "archived",
+			renderRow: (row, ctx, width) => `${row}:${width}:${ctx.primary.width}`,
+		},
+		detail: {
+			title: { label: "Detail", tail: "2/2 VAL" },
+			rows: (ctx) => [`detail:${ctx.selectedRow}`],
+		},
+		onRender: () => {
+			renders++;
+		},
+	}), 80);
+
+	let lines = render();
+	assert.equal(renders, 1);
+	assert.ok(lines[0].includes("2/2 VAL"));
+	assert.ok(lines.join("\n").includes("done"));
+	assert.match(lines.join("\n"), /archived:(\d+):\1/);
+	assert.ok(lines[1].includes("detail:archived"));
+	assert.ok(lines.some((line) => line.includes("2/2")));
+
+	component.handleInput("k");
+	lines = render();
+	assert.ok(lines[1].includes("detail:active"));
+	assert.equal(renders, 2);
+});
+
 test("rendered lines are padded to the requested width", () => {
 	const { render } = mount(baseOptions(), 72);
 	for (const line of render()) {

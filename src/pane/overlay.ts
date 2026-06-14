@@ -3,14 +3,10 @@ import { dispatchNavKeys } from "./key-dispatch.ts";
 import {
 	computeFixedSidebarLayout,
 	computeSplitPaneLayout,
-	endCursor,
 	endScrollOffset,
 	ensureCursorVisible,
-	homeCursor,
 	homeScrollOffset,
-	moveCursor,
 	moveScrollOffset,
-	pageCursor,
 	pageScrollOffset,
 	resizeSplitPane,
 	type PaneDirection,
@@ -37,11 +33,30 @@ export interface PaneOverlayContext<T = unknown, Row = unknown> {
 	selectedRow: Row | undefined;
 	selectedIndex: number;
 	selectedKey: string;
-	primary: { mode: "cursor" | "scroll"; cursor: number; scrollOffset: number };
-	detail: { scrollOffset: number };
+	primary: { mode: "cursor" | "scroll"; cursor: number; scrollOffset: number; width: number };
+	detail: { scrollOffset: number; width: number };
 	close(result?: T): void;
 	requestRender(): void;
 }
+
+export interface PaneOverlaySeparatorRow {
+	kind: "separator";
+	label?: string;
+}
+
+export type PaneOverlayPrimaryRow<Row = unknown> = Row | PaneOverlaySeparatorRow;
+
+export interface PaneOverlayTitle {
+	label: string;
+	tail?: string;
+	tailRendered?: string;
+	tailPlain?: string;
+	labelColor?: string;
+	tailColor?: string;
+	labelBold?: boolean;
+}
+
+type PaneOverlayTitleValue<Row> = string | PaneOverlayTitle | ((ctx: PaneOverlayContext<unknown, Row>) => string | PaneOverlayTitle);
 
 export interface PaneOverlayCustomAction<T = unknown, Row = unknown> {
 	keys: string | readonly string[];
@@ -53,17 +68,21 @@ export interface PaneOverlayCustomAction<T = unknown, Row = unknown> {
 
 export interface PrimaryPaneOptions<Row = unknown> {
 	mode?: "cursor" | "scroll";
-	rows: Row[] | ((ctx: PaneOverlayContext<unknown, Row>) => Row[]);
-	renderRow?(row: Row, ctx: PaneOverlayContext<unknown, Row>): string;
+	rows: PaneOverlayPrimaryRow<Row>[] | ((ctx: PaneOverlayContext<unknown, Row>) => PaneOverlayPrimaryRow<Row>[]);
+	renderRow?(row: Row, ctx: PaneOverlayContext<unknown, Row>, width: number): string;
 	selectionKey?(row: Row, index: number): string;
+	initialSelectionKey?: string;
+	initialIndex?: number;
 	onSelectionChange?(row: Row | undefined, index: number, key: string, ctx: PaneOverlayContext<unknown, Row>): void;
-	title?: string | ((ctx: PaneOverlayContext<unknown, Row>) => string);
+	title?: PaneOverlayTitleValue<Row>;
+	info?: string[] | ((ctx: PaneOverlayContext<unknown, Row>) => string[]);
+	infoTitle?: string | ((ctx: PaneOverlayContext<unknown, Row>) => string);
 	footer?: string | ((ctx: PaneOverlayContext<unknown, Row>) => string);
 }
 
 export interface DetailPaneOptions<Row = unknown> {
 	rows(ctx: PaneOverlayContext<unknown, Row>): string[];
-	title?: string | ((ctx: PaneOverlayContext<unknown, Row>) => string);
+	title?: PaneOverlayTitleValue<Row>;
 	footer?: string | ((ctx: PaneOverlayContext<unknown, Row>) => string);
 }
 
@@ -97,6 +116,7 @@ export interface PaneOverlayOptions<T = unknown, Row = unknown> {
 	collapse?: PaneCollapseOptions;
 	perSelectionScroll?: boolean;
 	stickyBottom?: boolean;
+	onRender?(ctx: PaneOverlayContext<T, Row>): void;
 }
 
 export interface PaneOverlayComponent {
@@ -107,7 +127,7 @@ export interface PaneOverlayComponent {
 
 const DEFAULT_CLOSE_KEYS = ["escape", "ctrl+c", "q"] as const;
 
-function resolveValue<T, Row>(value: T | ((ctx: PaneOverlayContext<unknown, Row>) => T), ctx: PaneOverlayContext<unknown, Row>): T {
+function resolveValue<T, Row>(value: T | ((ctx: PaneOverlayContext<unknown, Row>) => T) | undefined, ctx: PaneOverlayContext<unknown, Row>): T | undefined {
 	return typeof value === "function" ? (value as (ctx: PaneOverlayContext<unknown, Row>) => T)(ctx) : value;
 }
 
@@ -133,6 +153,53 @@ function decorateRow(text: string, theme: ChromeTheme): string {
 	return theme.bold ? theme.bold(theme.fg("accent", text)) : theme.fg("accent", text);
 }
 
+function isSeparatorRow<Row>(row: PaneOverlayPrimaryRow<Row> | undefined): row is PaneOverlaySeparatorRow {
+	return typeof row === "object" && row !== null && (row as { kind?: unknown }).kind === "separator";
+}
+
+function selectableIndexes<Row>(rows: readonly PaneOverlayPrimaryRow<Row>[]): number[] {
+	const indexes: number[] = [];
+	for (let index = 0; index < rows.length; index++) {
+		if (!isSeparatorRow(rows[index])) indexes.push(index);
+	}
+	return indexes;
+}
+
+function nearestSelectableIndex<Row>(rows: readonly PaneOverlayPrimaryRow<Row>[], start: number): number {
+	if (rows.length === 0) return 0;
+	const clamped = Math.max(0, Math.min(start, rows.length - 1));
+	if (!isSeparatorRow(rows[clamped])) return clamped;
+	for (let offset = 1; offset < rows.length; offset++) {
+		const after = clamped + offset;
+		if (after < rows.length && !isSeparatorRow(rows[after])) return after;
+		const before = clamped - offset;
+		if (before >= 0 && !isSeparatorRow(rows[before])) return before;
+	}
+	return 0;
+}
+
+function titleOptions<Row>(
+	title: string | PaneOverlayTitle | undefined,
+	focused: boolean,
+): Omit<Parameters<typeof titledTopSegment>[1], "width"> {
+	if (typeof title === "object" && title !== null) {
+		return {
+			label: title.label,
+			tail: title.tail,
+			tailRendered: title.tailRendered,
+			tailPlain: title.tailPlain,
+			labelColor: title.labelColor ?? (focused ? "accent" : "text"),
+			tailColor: title.tailColor,
+			labelBold: title.labelBold ?? focused,
+		};
+	}
+	return {
+		label: title ?? "",
+		labelColor: focused ? "accent" : "text",
+		labelBold: focused,
+	};
+}
+
 export function paneOverlay<T = undefined, Row = unknown>(
 	options: PaneOverlayOptions<T, Row>,
 ): FullscreenComponentFactory<T> {
@@ -155,6 +222,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 		let leftFraction = split.initialFraction ?? 0.5;
 		let lastRenderWidth = 80;
 		let lastSelectedKey: string | undefined;
+		let initialSelectionApplied = false;
 
 		const primaryState = { cursor: 0, scrollOffset: 0 };
 		const detailState = { scrollOffset: 0, sticky: stickyBottom };
@@ -174,8 +242,8 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			selectedIndex: number,
 			selectedRow: Row | undefined,
 			selectedKey: string,
-			primaryRows: Row[],
-			detailRows: string[],
+			primaryWidth = 0,
+			detailWidth = 0,
 		): PaneOverlayContext<T, Row> => ({
 			tui,
 			primaryFocus: focus === "primary",
@@ -187,8 +255,9 @@ export function paneOverlay<T = undefined, Row = unknown>(
 				mode: options.primary.mode ?? "scroll",
 				cursor: primaryState.cursor,
 				scrollOffset: primaryState.scrollOffset,
+				width: primaryWidth,
 			},
-			detail: { scrollOffset: detailState.scrollOffset },
+			detail: { scrollOffset: detailState.scrollOffset, width: detailWidth },
 			close: (result) => finish(result as T),
 			requestRender,
 		});
@@ -214,6 +283,61 @@ export function paneOverlay<T = undefined, Row = unknown>(
 				maxFraction: split.maxFraction,
 				fractionBasis: split.fractionBasis,
 			});
+		};
+
+		const currentWidths = () => {
+			const layout = getLayout(lastRenderWidth);
+			return { primaryWidth: layout.leftWidth, detailWidth: layout.rightWidth };
+		};
+
+		const getPrimaryRows = (ctx: PaneOverlayContext<T, Row>): PaneOverlayPrimaryRow<Row>[] => {
+			return resolveValue(options.primary.rows, ctx) ?? [];
+		};
+
+		const selectionKeyFor = (row: Row, index: number) => {
+			return (options.primary.selectionKey ?? ((_row, rowIndex) => String(rowIndex)))(row, index);
+		};
+
+		const applyInitialSelection = (rows: PaneOverlayPrimaryRow<Row>[]) => {
+			if (initialSelectionApplied || rows.length === 0) return;
+			let targetIndex = -1;
+			if (options.primary.initialSelectionKey !== undefined) {
+				targetIndex = rows.findIndex((row, index) => !isSeparatorRow(row) && selectionKeyFor(row, index) === options.primary.initialSelectionKey);
+			}
+			if (targetIndex < 0 && options.primary.initialIndex !== undefined) {
+				targetIndex = options.primary.initialIndex;
+			}
+			if (targetIndex < 0) return;
+			initialSelectionApplied = true;
+			const selectableIndex = nearestSelectableIndex(rows, targetIndex);
+			primaryState.cursor = selectableIndex;
+			primaryState.scrollOffset = selectableIndex;
+		};
+
+		const computeSelectionFromRows = (primaryRows: PaneOverlayPrimaryRow<Row>[], bodyHeight: number) => {
+			applyInitialSelection(primaryRows);
+			const primaryMode = options.primary.mode ?? "scroll";
+			let selectedIndex = 0;
+			if (primaryMode === "cursor") {
+				const viewport = ensureCursorVisible({
+					cursor: nearestSelectableIndex(primaryRows, primaryState.cursor),
+					scroll: primaryState.scrollOffset,
+					itemCount: primaryRows.length,
+					viewportHeight: Math.max(1, bodyHeight),
+				});
+				primaryState.cursor = nearestSelectableIndex(primaryRows, viewport.cursor);
+				primaryState.scrollOffset = viewport.scroll;
+				selectedIndex = primaryState.cursor;
+			} else {
+				primaryState.scrollOffset = Math.min(primaryState.scrollOffset, Math.max(0, primaryRows.length - 1));
+				selectedIndex = nearestSelectableIndex(primaryRows, primaryState.scrollOffset);
+				primaryState.scrollOffset = selectedIndex;
+			}
+			if (primaryRows.length === 0 || selectableIndexes(primaryRows).length === 0) selectedIndex = 0;
+			const selectedCandidate = primaryRows[selectedIndex];
+			const selectedRow = !isSeparatorRow(selectedCandidate) ? selectedCandidate : undefined;
+			const selectedKey = selectedRow !== undefined ? selectionKeyFor(selectedRow, selectedIndex) : String(selectedIndex);
+			return { primaryRows, selectedIndex, selectedRow, selectedKey };
 		};
 
 		const resize = (direction: PaneDirection) => {
@@ -250,25 +374,36 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			return state;
 		};
 
-		const listViewport = (bodyHeight: number, legendLineCount: number) => {
-			const primaryHeight = legendPlacement === "primary"
-				? Math.max(0, bodyHeight - legendLineCount - 1)
-				: bodyHeight;
-			return { primaryHeight, detailHeight: bodyHeight };
+		const primarySections = (bodyHeight: number, legendLineCount: number, infoLineCount: number) => {
+			const legendBlockHeight = legendPlacement === "primary" && legendLineCount > 0 ? legendLineCount + 1 : 0;
+			const availableBeforeLegend = Math.max(0, bodyHeight - legendBlockHeight);
+			const infoVisibleCount = infoLineCount > 0
+				? Math.min(infoLineCount, Math.max(0, availableBeforeLegend - 2))
+				: 0;
+			const infoBlockHeight = infoVisibleCount > 0 ? infoVisibleCount + 1 : 0;
+			return {
+				primaryHeight: Math.max(0, availableBeforeLegend - infoBlockHeight),
+				detailHeight: bodyHeight,
+				infoVisibleCount,
+			};
 		};
 
 		const pageSizeHalf = (height: number) => Math.max(1, Math.floor(height / 2));
 
 		const withPrimaryViewport = (bodyHeight: number, legendLineCount: number) => {
-			const primaryRows = resolveValue(options.primary.rows, makeContext(0, undefined, "", [], []));
-			const viewportHeight = listViewport(bodyHeight, legendLineCount).primaryHeight;
+			const { primaryWidth, detailWidth } = currentWidths();
+			const primaryRows = getPrimaryRows(makeContext(0, undefined, "", primaryWidth, detailWidth));
+			const selection = computeSelectionFromRows(primaryRows, bodyHeight);
+			const ctx = makeContext(selection.selectedIndex, selection.selectedRow, selection.selectedKey, primaryWidth, detailWidth);
+			const infoLines = resolveValue(options.primary.info, ctx) ?? [];
+			const viewportHeight = primarySections(bodyHeight, legendLineCount, infoLines.length).primaryHeight;
 			return { primaryRows, viewportHeight: Math.max(1, viewportHeight) };
 		};
 
 		const applyPrimaryNav = (
 			bodyHeight: number,
 			legendLineCount: number,
-			mutator: (state: typeof primaryState, rows: Row[], viewportHeight: number) => void,
+			mutator: (state: typeof primaryState, rows: PaneOverlayPrimaryRow<Row>[], viewportHeight: number) => void,
 		) => {
 			const { primaryRows, viewportHeight } = withPrimaryViewport(bodyHeight, legendLineCount);
 			mutator(primaryState, primaryRows, viewportHeight);
@@ -277,8 +412,12 @@ export function paneOverlay<T = undefined, Row = unknown>(
 		const movePrimary = (delta: PaneDirection, bodyHeight: number, legendLineCount: number) => {
 			applyPrimaryNav(bodyHeight, legendLineCount, (state, rows, viewportHeight) => {
 				if ((options.primary.mode ?? "scroll") === "cursor") {
-					const next = moveCursor({ cursor: state.cursor, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight }, delta);
-					state.cursor = next.cursor;
+					const indexes = selectableIndexes(rows);
+					if (indexes.length === 0) return;
+					const currentIndex = nearestSelectableIndex(rows, state.cursor);
+					const currentOrdinal = Math.max(0, indexes.indexOf(currentIndex));
+					state.cursor = indexes[Math.max(0, Math.min(indexes.length - 1, currentOrdinal + delta))] ?? currentIndex;
+					const next = ensureCursorVisible({ cursor: state.cursor, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight });
 					state.scrollOffset = next.scroll;
 				} else {
 					state.scrollOffset = moveScrollOffset({ offset: state.scrollOffset, contentLength: rows.length, viewportHeight }, delta);
@@ -290,8 +429,12 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			applyPrimaryNav(bodyHeight, legendLineCount, (state, rows, viewportHeight) => {
 				const pageSize = pageSizeHalf(viewportHeight);
 				if ((options.primary.mode ?? "scroll") === "cursor") {
-					const next = pageCursor({ cursor: state.cursor, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight }, delta, pageSize);
-					state.cursor = next.cursor;
+					const indexes = selectableIndexes(rows);
+					if (indexes.length === 0) return;
+					const currentIndex = nearestSelectableIndex(rows, state.cursor);
+					const currentOrdinal = Math.max(0, indexes.indexOf(currentIndex));
+					state.cursor = indexes[Math.max(0, Math.min(indexes.length - 1, currentOrdinal + delta * pageSize))] ?? currentIndex;
+					const next = ensureCursorVisible({ cursor: state.cursor, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight });
 					state.scrollOffset = next.scroll;
 				} else {
 					state.scrollOffset = pageScrollOffset({ offset: state.scrollOffset, contentLength: rows.length, viewportHeight }, delta, pageSize);
@@ -302,7 +445,9 @@ export function paneOverlay<T = undefined, Row = unknown>(
 		const homePrimary = (bodyHeight: number, legendLineCount: number) => {
 			applyPrimaryNav(bodyHeight, legendLineCount, (state, rows, viewportHeight) => {
 				if ((options.primary.mode ?? "scroll") === "cursor") {
-					const next = homeCursor({ cursor: state.cursor, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight });
+					const indexes = selectableIndexes(rows);
+					if (indexes.length === 0) return;
+					const next = ensureCursorVisible({ cursor: indexes[0] ?? 0, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight });
 					state.cursor = next.cursor;
 					state.scrollOffset = next.scroll;
 				} else {
@@ -314,7 +459,9 @@ export function paneOverlay<T = undefined, Row = unknown>(
 		const endPrimary = (bodyHeight: number, legendLineCount: number) => {
 			applyPrimaryNav(bodyHeight, legendLineCount, (state, rows, viewportHeight) => {
 				if ((options.primary.mode ?? "scroll") === "cursor") {
-					const next = endCursor({ cursor: state.cursor, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight });
+					const indexes = selectableIndexes(rows);
+					if (indexes.length === 0) return;
+					const next = ensureCursorVisible({ cursor: indexes[indexes.length - 1] ?? 0, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight });
 					state.cursor = next.cursor;
 					state.scrollOffset = next.scroll;
 				} else {
@@ -356,28 +503,6 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			return entries.map((entry) => chromeTheme.fg("dim", renderKeyRow(entry.key, entry.label, totalWidth, keyWidth)));
 		};
 
-		const computeSelection = (bodyHeight: number) => {
-			const provisionalCtx = makeContext(0, undefined, "", [], []);
-			const primaryRows = resolveValue(options.primary.rows, provisionalCtx);
-			const primaryMode = options.primary.mode ?? "scroll";
-			let selectedIndex = 0;
-			if (primaryMode === "cursor") {
-				selectedIndex = ensureCursorVisible({
-					cursor: primaryState.cursor,
-					scroll: primaryState.scrollOffset,
-					itemCount: primaryRows.length,
-					viewportHeight: Math.max(1, bodyHeight),
-				}).cursor;
-			} else {
-				selectedIndex = Math.min(primaryState.scrollOffset, Math.max(0, primaryRows.length - 1));
-			}
-			if (primaryRows.length === 0) selectedIndex = 0;
-			const selectedRow = primaryRows[selectedIndex];
-			const selectionKeyFn = options.primary.selectionKey ?? ((_row, index) => String(index));
-			const selectedKey = selectedRow !== undefined ? selectionKeyFn(selectedRow, selectedIndex) : String(selectedIndex);
-			return { primaryRows, selectedIndex, selectedRow, selectedKey };
-		};
-
 		const component: PaneOverlayComponent = {
 			dispose() {
 				// no-op is acceptable
@@ -391,9 +516,11 @@ export function paneOverlay<T = undefined, Row = unknown>(
 				const primaryWidth = layout.leftWidth;
 				const detailWidth = layout.rightWidth;
 
-				const { primaryRows, selectedIndex, selectedRow, selectedKey } = computeSelection(bodyHeight);
-				const detailRows = resolveValue(options.detail.rows, makeContext(selectedIndex, selectedRow, selectedKey, primaryRows, []));
-				const ctx = makeContext(selectedIndex, selectedRow, selectedKey, primaryRows, detailRows);
+				const primaryRows = getPrimaryRows(makeContext(0, undefined, "", primaryWidth, detailWidth));
+				const { selectedIndex, selectedRow, selectedKey } = computeSelectionFromRows(primaryRows, bodyHeight);
+				const ctx = makeContext(selectedIndex, selectedRow, selectedKey, primaryWidth, detailWidth);
+				options.onRender?.(ctx);
+				const detailRows = options.detail.rows(ctx) ?? [];
 
 				if (selectedKey !== lastSelectedKey) {
 					lastSelectedKey = selectedKey;
@@ -413,7 +540,9 @@ export function paneOverlay<T = undefined, Row = unknown>(
 
 				const entries = legendEntries(ctx);
 				const legendLines = renderLegendLines(entries, totalWidth);
-				const { primaryHeight, detailHeight } = listViewport(bodyHeight, legendLines.length);
+				const infoLines = resolveValue(options.primary.info, ctx) ?? [];
+				const infoTitle = resolveValue(options.primary.infoTitle, ctx) ?? "info";
+				const { primaryHeight, detailHeight, infoVisibleCount } = primarySections(bodyHeight, legendLines.length, infoLines.length);
 
 				// Align primary viewport.
 				if ((options.primary.mode ?? "scroll") === "cursor") {
@@ -450,15 +579,11 @@ export function paneOverlay<T = undefined, Row = unknown>(
 
 				const topPrimary = titledTopSegment(chromeTheme, {
 					width: primaryWidth,
-					label: primaryTitle ?? "",
-					labelColor: focus === "primary" ? "accent" : "text",
-					labelBold: focus === "primary",
+					...titleOptions(primaryTitle, focus === "primary"),
 				});
 				const topDetail = titledTopSegment(chromeTheme, {
 					width: detailWidth,
-					label: detailTitle ?? "",
-					labelColor: focus === "detail" ? "accent" : "text",
-					labelBold: focus === "detail",
+					...titleOptions(detailTitle, focus === "detail"),
 				});
 
 				const corner = (glyph: string) => chromeTheme.fg("dim", glyph);
@@ -471,16 +596,18 @@ export function paneOverlay<T = undefined, Row = unknown>(
 					.slice(primaryState.scrollOffset, primaryState.scrollOffset + primaryHeight)
 					.map((row, index) => {
 						const absoluteIndex = primaryState.scrollOffset + index;
-						const text = renderFn(row, ctx);
+						if (isSeparatorRow(row)) return flatRule(chromeTheme, row.label ?? "", primaryWidth);
+						const text = renderFn(row, ctx, primaryWidth);
 						const selected = (options.primary.mode ?? "scroll") === "cursor" && absoluteIndex === primaryState.cursor && focus === "primary";
 						return selected ? decorateRow(text, chromeTheme) : text;
 					});
 
 				const detailVisible = detailRows.slice(detailState.scrollOffset, detailState.scrollOffset + detailHeight);
 
+				const selectable = selectableIndexes(primaryRows);
 				const primaryFooterText = resolveValue(options.primary.footer, ctx)
-					?? ((options.primary.mode ?? "scroll") === "cursor" && primaryRows.length > 0
-						? `${primaryState.cursor + 1}/${primaryRows.length}`
+					?? ((options.primary.mode ?? "scroll") === "cursor" && selectable.length > 0
+						? `${Math.max(0, selectable.indexOf(primaryState.cursor)) + 1}/${selectable.length}`
 						: primaryRows.length > primaryHeight
 							? formatScrollInfo(primaryState.scrollOffset, Math.max(0, primaryRows.length - primaryHeight), { style: "position" })
 							: "");
@@ -496,13 +623,19 @@ export function paneOverlay<T = undefined, Row = unknown>(
 					: corner("╰") + bottomPrimary + corner("┴") + bottomDetail + corner("╯");
 
 				const bodyLines: string[] = [];
+				const infoStart = primaryHeight;
+				const legendStart = primaryHeight + (infoVisibleCount > 0 ? infoVisibleCount + 1 : 0);
 				for (let row = 0; row < bodyHeight; row++) {
 					let primaryCell = primaryVisible[row] ?? "";
-					if (legendPlacement === "primary" && row === primaryHeight && legendLines.length > 0) {
+					if (infoVisibleCount > 0 && row === infoStart) {
+						primaryCell = flatRule(chromeTheme, infoTitle, primaryWidth);
+					} else if (infoVisibleCount > 0 && row > infoStart && row < legendStart) {
+						primaryCell = infoLines[row - infoStart - 1] ?? "";
+					} else if (legendPlacement === "primary" && row === legendStart && legendLines.length > 0) {
 						primaryCell = flatRule(chromeTheme, collapse?.label ?? "actions", primaryWidth);
 					}
-					if (legendPlacement === "primary" && row > primaryHeight) {
-						const legendIndex = row - primaryHeight - 1;
+					if (legendPlacement === "primary" && row > legendStart) {
+						const legendIndex = row - legendStart - 1;
 						primaryCell = legendIndex < legendLines.length ? padRight(legendLines[legendIndex], primaryWidth) : "";
 					}
 					const detailCell = detailVisible[row] ?? "";
@@ -531,9 +664,11 @@ export function paneOverlay<T = undefined, Row = unknown>(
 					return;
 				}
 
-				const { primaryRows, selectedIndex, selectedRow, selectedKey } = computeSelection(bodyHeight);
-				const detailRows = resolveValue(options.detail.rows, makeContext(selectedIndex, selectedRow, selectedKey, primaryRows, []));
-				const ctx = makeContext(selectedIndex, selectedRow, selectedKey, primaryRows, detailRows);
+				const { primaryWidth, detailWidth } = currentWidths();
+				const primaryRows = getPrimaryRows(makeContext(0, undefined, "", primaryWidth, detailWidth));
+				const { selectedIndex, selectedRow, selectedKey } = computeSelectionFromRows(primaryRows, bodyHeight);
+				const ctx = makeContext(selectedIndex, selectedRow, selectedKey, primaryWidth, detailWidth);
+				const detailRows = options.detail.rows(ctx) ?? [];
 
 				for (const action of customActions) {
 					if (action.when && !action.when(ctx)) continue;

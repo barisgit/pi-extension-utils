@@ -19,12 +19,16 @@ await client.ui.fullscreen(
       mode: "cursor",
       rows: () => runs,
       selectionKey: (run) => run.id,
-      renderRow: (run) => run.label,
+      initialSelectionKey: currentRunId,
+      renderRow: (run, ctx, width) => width > 40 ? `${run.label} ${run.status}` : run.label,
+      infoTitle: "selected",
+      info: (ctx) => ctx.selectedRow ? [`status: ${ctx.selectedRow.status}`] : [],
     },
     detail: {
-      title: (ctx) => ctx.selectedRow?.label ?? "Details",
+      title: (ctx) => ({ label: ctx.selectedRow?.label ?? "Details", tail: "VAL" }),
       rows: (ctx) => renderDetails(ctx.selectedRow),
     },
+    onRender: (ctx) => tickFlashMessage(),
     customActions: [
       {
         keys: ["enter", "o"],
@@ -62,6 +66,29 @@ await client.ui.fullscreen(
 | `collapse` | Optional primary/sidebar collapse key |
 | `perSelectionScroll` | Keep separate detail scroll per selected key |
 | `stickyBottom` | Detail starts/follows at bottom until user scrolls |
+| `onRender` | Per-frame hook for external transient UI state |
+
+## Primary pane extras
+
+The primary pane can render more than a flat selectable list:
+
+- `renderRow(row, ctx, width)` receives the current primary pane width. The same value is also exposed as `ctx.primary.width`; `ctx.detail.width` exposes the detail pane width.
+- `primary.info` renders a selected-row-derived block below the list and above a primary-placed legend. Use `primary.infoTitle` to label its divider.
+- `rows` may include `{ kind: "separator", label: "done" }`. Separator rows render as inline rules and are skipped by cursor movement and selection keys.
+- `initialSelectionKey` or `initialIndex` controls the first selected row when the overlay opens. `initialSelectionKey` applies on the first frame where that key is present, including async-arriving rows.
+
+Pane titles may be strings or structured objects forwarded to `titledTopSegment`:
+
+```ts
+detail: {
+  title: (ctx) => ({
+    label: ctx.selectedRow?.name ?? "Details",
+    tailRendered: renderStatusTail(ctx.selectedRow),
+    tailPlain: plainStatusTail(ctx.selectedRow),
+  }),
+  rows: renderDetailRows,
+}
+```
 
 ## Custom actions
 
