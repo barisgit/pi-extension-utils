@@ -44,8 +44,12 @@ export function pad(s: string, len: number): string {
 	return s + " ".repeat(Math.max(0, len - vis));
 }
 
-function normalizeRenderableText(text: string): string {
-	return text
+function normalizeRenderableText(text: unknown): string {
+	// Coerce defensively: a non-string here reaches truncateToWidth/text.slice
+	// and hard-crashes pi ("text.slice is not a function"). Callers pass values
+	// derived from on-disk/agent state that may be out-of-contract.
+	const s = typeof text === "string" ? text : text == null ? "" : String(text);
+	return s
 		.replaceAll("\t", "    ")
 		.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001A\u001C-\u001F\u007F]/g, "");
 }
@@ -124,12 +128,12 @@ export function titledTopSegment(theme: ChromeTheme, opts: TitledTopSegmentOptio
 		if (width <= 2) return dash(width);
 		const labelColor = opts.labelColor ?? "text";
 		const tailColor = opts.tailColor ?? "dim";
-		const tailPlain = opts.tailPlain ?? opts.tail ?? "";
+		const tailPlain = normalizeRenderableText(opts.tailPlain ?? opts.tail ?? "");
 		const tailRendered = opts.tailRendered ?? (opts.tail !== undefined ? theme.fg(tailColor, opts.tail) : "");
 		const tailLen = visibleWidth(tailPlain);
 		const canShowTail = tailLen > 0 && width - tailLen >= 14;
 		const labelBudget = Math.max(0, width - (canShowTail ? tailLen + 6 : 4));
-		const labelText = clipText(opts.label ?? "", labelBudget);
+		const labelText = clipText(normalizeRenderableText(opts.label ?? ""), labelBudget);
 		const labelLen = visibleWidth(labelText);
 		if (labelLen === 0) return dash(width);
 		const labelStyled = opts.labelBold && theme.bold
@@ -146,7 +150,7 @@ export function titledTopSegment(theme: ChromeTheme, opts: TitledTopSegmentOptio
 	if (width <= 0) return "";
 	const labelColor = opts.labelColor ?? "text";
 	const tailColor = opts.tailColor ?? "dim";
-	const tailPlain = opts.tailPlain ?? opts.tail ?? "";
+	const tailPlain = normalizeRenderableText(opts.tailPlain ?? opts.tail ?? "");
 	const rawTailRendered = opts.tailRendered ?? (opts.tail !== undefined ? theme.fg(tailColor, opts.tail) : "");
 	const tailLen = visibleWidth(tailPlain);
 	// With a tail, the minimum chrome is:
@@ -157,7 +161,7 @@ export function titledTopSegment(theme: ChromeTheme, opts: TitledTopSegmentOptio
 	const labelBudget = tailFits ? Math.max(0, width - tailLen - 7) : Math.max(0, width - 3);
 	// Defensive: callers occasionally pass undefined labels for transient/legacy
 	// runs that lack agent+mode+label; treat as empty rather than crashing pi.
-	const rawLabel = opts.label ?? "";
+	const rawLabel = normalizeRenderableText(opts.label ?? "");
 	const labelText = truncateToWidth(rawLabel, labelBudget, "").replace(/\u001b\[[0-9;]*m/g, "");
 	const labelStyled = opts.labelBold && theme.bold
 		? theme.bold(theme.fg(labelColor, labelText))
@@ -181,10 +185,11 @@ export function titledTopSegment(theme: ChromeTheme, opts: TitledTopSegmentOptio
 export function titledBottomSegment(theme: ChromeTheme, width: number, hint: string, focused: boolean): string {
 	const dash = (n: number) => theme.fg("dim", "─".repeat(Math.max(0, n)));
 	if (width <= 0) return "";
-	if (!hint) return dash(width);
+	const safeHint = normalizeRenderableText(hint);
+	if (!safeHint) return dash(width);
 	// Reserve at minimum `─ ` + hint + ` `; truncate hint to fit when narrow so we never overflow.
 	const hintBudget = Math.max(0, width - 3);
-	const clipped = truncateToWidth(hint, hintBudget);
+	const clipped = truncateToWidth(safeHint, hintBudget);
 	const clippedLen = visibleWidth(clipped);
 	if (clippedLen === 0) return dash(width);
 	const hintStyled = focused && theme.bold
@@ -222,16 +227,17 @@ export function clipText(text: string, width: number): string {
 export function flatRule(theme: ChromeTheme, title: string, width: number, opts?: { leadingDashes?: number }): string {
 	if (width <= 0) return "";
 	const dash = (n: number) => theme.fg("dim", "─".repeat(Math.max(0, n)));
-	if (!title) return dash(width);
+	const safeTitle = normalizeRenderableText(title);
+	if (!safeTitle) return dash(width);
 	if (opts?.leadingDashes !== undefined) {
-		const label = ` ${title} `;
+		const label = ` ${safeTitle} `;
 		const labelW = visibleWidth(label);
 		if (labelW + 4 >= width) return dash(width);
 		const leading = Math.max(0, opts.leadingDashes);
 		const trailing = Math.max(0, width - labelW - leading);
 		return `${dash(leading)}${theme.fg("dim", label)}${dash(trailing)}`;
 	}
-	const clipped = truncateToWidth(title, Math.max(0, width - 4));
+	const clipped = truncateToWidth(safeTitle, Math.max(0, width - 4));
 	const clippedLen = visibleWidth(clipped);
 	const styled = theme.fg("dim", clipped);
 	const trailing = Math.max(0, width - (clippedLen + 3));

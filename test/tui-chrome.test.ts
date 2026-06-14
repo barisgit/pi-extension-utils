@@ -59,6 +59,17 @@ test("titled segments and flat rule match expected chrome output", () => {
 	assert.equal(flatRule(theme, "", 4), "────");
 });
 
+test("titled segments tolerate non-string label/tail without crashing", () => {
+	// A non-string label/tail used to reach truncateToWidth -> text.slice and
+	// hard-crash the host ("text.slice is not a function"). It must be coerced.
+	const n = 12345 as unknown as string;
+	assert.doesNotThrow(() => titledTopSegment(theme, { width: 20, label: n }));
+	assert.doesNotThrow(() => titledTopSegment(theme, { width: 20, label: n, tail: n }));
+	assert.doesNotThrow(() => titledTopSegment(theme, { width: 20, label: n, tailPlain: n, tailRendered: String(n) }));
+	assert.equal(titledTopSegment(theme, { width: 12, label: 42 as unknown as string }), "─ 42 ───────");
+	assert.doesNotThrow(() => titledBottomSegment(theme, 10, 7 as unknown as string, false));
+});
+
 test("header, footer, key rows, and scroll info format exactly", () => {
 	assert.equal(renderHeader("Hi", 8, theme), "╭──Hi──╮");
 	assert.equal(renderFooter("Esc", 9, theme), "╰──Esc──╯");
