@@ -1,3 +1,5 @@
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+
 export const PROTOCOL_VERSION = 1;
 export const EVENT_PREFIX = "pi-extension-utils";
 
@@ -18,12 +20,7 @@ export const EVENTS = {
 } as const;
 
 export type WidgetPlacement = "aboveEditor" | "belowEditor";
-export interface WidgetComponent {
-	render(width: number): string[];
-	invalidate(): void;
-	dispose?(): void;
-}
-export type WidgetFactory = (tui: unknown, theme: unknown) => WidgetComponent;
+export type WidgetFactory = NonNullable<Parameters<ExtensionContext["ui"]["setWidget"]>[1]>;
 
 export interface ProtocolPayload {
 	protocolVersion: number;

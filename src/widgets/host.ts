@@ -8,7 +8,6 @@ import {
 	type HelloPayload,
 	type RegisterWidgetPayload,
 	type UnregisterWidgetPayload,
-	type WidgetComponent,
 	type WidgetFactory,
 	type WidgetPlacement,
 } from "./protocol.ts";
@@ -140,7 +139,7 @@ export function registerWidgetHost(pi: ExtensionAPI): void {
 	}
 }
 
-function createHostComponent(tui: unknown, theme: unknown, records: WidgetRecord[], hidden: boolean): WidgetComponent {
+function createHostComponent(tui: Parameters<WidgetFactory>[0], theme: Parameters<WidgetFactory>[1], records: WidgetRecord[], hidden: boolean): ReturnType<WidgetFactory> {
 	const components = hidden ? [] : records.map((record) => record.factory(tui, theme));
 	return {
 		render(width) {
