@@ -82,7 +82,7 @@ log.warn("slow path");
 log.error("failed");
 ```
 
-`createLogger(name)` writes to `getAgentDir()/log/<name>.log` by default. `level` is typed as `"debug" | "info" | "warn" | "error" | "silent"`; `maxFiles` controls retained rotations (`.1`, `.2`, ...). If `level`, `maxFiles`, or `maxBytes` are omitted, the value comes from `getAgentDir()/config/utils.jsonc` `logging` defaults. Explicit options always win.
+`createLogger(name)` writes JSONL to `getAgentDir()/log/<name>.jsonl` by default. Each line is `{"ts":"...","level":"info","message":"started"}`. `level` is typed as `"debug" | "info" | "warn" | "error" | "silent"`; `maxFiles` controls retained rotations (`.1`, `.2`, ...). If `level`, `maxFiles`, or `maxBytes` are omitted, the value comes from `getAgentDir()/config/utils.jsonc` `logging` defaults. Explicit options always win.
 
 Override when needed:
 

@@ -85,6 +85,10 @@ function writeCorruptUtilsConfig(agentDir) {
 	assert.throws(() => utilsConfig.reload(), /Invalid JSONC/);
 }
 
+function readJsonl(path) {
+	return readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
 function textFactory(text) {
 	return () => ({
 		render() {
@@ -428,13 +432,13 @@ test("logger uses utils config defaults when options omit logger settings", () =
 		logger.info("hidden info");
 		logger.warn("first warning that rotates");
 		logger.error("second error that rotates");
-		const file = join(logDir, "configured.log");
-		const rotated = join(logDir, "configured.log.1");
+		const file = join(logDir, "configured.jsonl");
+		const rotated = join(logDir, "configured.jsonl.1");
 		assert.equal(existsSync(file), true);
 		assert.equal(existsSync(rotated), true);
-		assert.match(readFileSync(file, "utf8"), /error second error/);
-		assert.match(readFileSync(rotated, "utf8"), /warn first warning/);
-		assert.doesNotMatch(`${readFileSync(file, "utf8")}${readFileSync(rotated, "utf8")}`, /hidden info/);
+		assert.deepEqual(readJsonl(file).map(({ level, message }) => ({ level, message })), [{ level: "error", message: "second error that rotates" }]);
+		assert.deepEqual(readJsonl(rotated).map(({ level, message }) => ({ level, message })), [{ level: "warn", message: "first warning that rotates" }]);
+		assert.equal([...readJsonl(file), ...readJsonl(rotated)].some((entry) => entry.message === "hidden info"), false);
 	} finally {
 		restoreAgentDir();
 	}
@@ -448,29 +452,30 @@ test("logger falls back to defaults when utils config is corrupt", () => {
 		writeCorruptUtilsConfig(agentDir);
 		const logger = createLogger("corrupt", { dir: logDir });
 		logger.info("still writes with defaults");
-		assert.match(readFileSync(join(logDir, "corrupt.log"), "utf8"), /info still writes with defaults/);
+		assert.deepEqual(readJsonl(join(logDir, "corrupt.jsonl")).map(({ level, message }) => ({ level, message })), [{ level: "info", message: "still writes with defaults" }]);
 	} finally {
 		restoreAgentDir();
 	}
 });
 
-test("logger writes lines, creates dirs, rotates, filters levels, and rejects path separators", () => {
+test("logger writes JSONL lines, creates dirs, rotates, filters levels, and rejects path separators", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-extension-utils-"));
 	const logger = createLogger("test", { dir, maxBytes: 70, maxFiles: 2, level: "info" });
 	logger.debug("hidden debug");
 	logger.info("first message that should fit");
 	logger.warn("second message that should rotate");
 	logger.error("third message that should rotate again");
-	const file = join(dir, "test.log");
-	const firstRotated = join(dir, "test.log.1");
-	const secondRotated = join(dir, "test.log.2");
+	const file = join(dir, "test.jsonl");
+	const firstRotated = join(dir, "test.jsonl.1");
+	const secondRotated = join(dir, "test.jsonl.2");
 	assert.equal(existsSync(file), true);
 	assert.equal(existsSync(firstRotated), true);
 	assert.equal(existsSync(secondRotated), true);
-	assert.match(readFileSync(file, "utf8"), /error third message/);
-	assert.match(readFileSync(firstRotated, "utf8"), /warn second message/);
-	assert.match(readFileSync(secondRotated, "utf8"), /info first message/);
-	assert.doesNotMatch(`${readFileSync(file, "utf8")}${readFileSync(firstRotated, "utf8")}${readFileSync(secondRotated, "utf8")}`, /hidden debug/);
+	assert.deepEqual(readJsonl(file).map(({ level, message }) => ({ level, message })), [{ level: "error", message: "third message that should rotate again" }]);
+	assert.deepEqual(readJsonl(firstRotated).map(({ level, message }) => ({ level, message })), [{ level: "warn", message: "second message that should rotate" }]);
+	assert.deepEqual(readJsonl(secondRotated).map(({ level, message }) => ({ level, message })), [{ level: "info", message: "first message that should fit" }]);
+	assert.equal([...readJsonl(file), ...readJsonl(firstRotated), ...readJsonl(secondRotated)].some((entry) => entry.message === "hidden debug"), false);
+	for (const entry of readJsonl(file)) assert.match(entry.ts, /^\d{4}-\d{2}-\d{2}T/);
 	assert.equal(logger.isEnabled("debug"), false);
 	logger.setLevel("debug");
 	assert.equal(logger.isEnabled("debug"), true);
@@ -483,13 +488,15 @@ test("logger supports silent level and maxBytes zero", () => {
 	const silent = createLogger("silent", { dir, level: "silent" });
 	silent.error("hidden");
 	assert.equal(silent.isEnabled("error"), false);
-	assert.equal(existsSync(join(dir, "silent.log")), false);
+	assert.equal(existsSync(join(dir, "silent.jsonl")), false);
 
 	const noRotate = createLogger("no-rotate", { dir, maxBytes: 0, maxFiles: 1, level: "debug" });
 	noRotate.info("first message that would rotate if maxBytes were active");
 	noRotate.error("second message that would rotate if maxBytes were active");
-	assert.equal(existsSync(join(dir, "no-rotate.log")), true);
-	assert.equal(existsSync(join(dir, "no-rotate.log.1")), false);
-	assert.match(readFileSync(join(dir, "no-rotate.log"), "utf8"), /first message/);
-	assert.match(readFileSync(join(dir, "no-rotate.log"), "utf8"), /second message/);
+	assert.equal(existsSync(join(dir, "no-rotate.jsonl")), true);
+	assert.equal(existsSync(join(dir, "no-rotate.jsonl.1")), false);
+	assert.deepEqual(readJsonl(join(dir, "no-rotate.jsonl")).map(({ level, message }) => ({ level, message })), [
+		{ level: "info", message: "first message that would rotate if maxBytes were active" },
+		{ level: "error", message: "second message that would rotate if maxBytes were active" },
+	]);
 });

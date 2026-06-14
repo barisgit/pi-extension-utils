@@ -9,7 +9,7 @@ export { LOG_LEVELS, loggerLevelSchema, loggingConfigSchema, type LoggerLevel, t
 export interface LoggerOptions {
 	dir?: string;
 	maxBytes?: number;
-	/** Number of rotated files to retain: name.log.1, name.log.2, ... */
+	/** Number of rotated files to retain: name.jsonl.1, name.jsonl.2, ... */
 	maxFiles?: number;
 	/** Minimum level to write. Defaults to utilsConfig.logging.level. */
 	level?: LoggerLevel;
@@ -23,6 +23,12 @@ export interface Logger {
 	log(level: LogLevel, message: string): void;
 	setLevel(level: LoggerLevel): void;
 	isEnabled(level: LogLevel): boolean;
+}
+
+export interface LoggerRecord {
+	ts: string;
+	level: LogLevel;
+	message: string;
 }
 
 const LEVEL_WEIGHT: Record<LoggerLevel, number> = {
@@ -44,7 +50,7 @@ export function createLogger(name: string, opts: LoggerOptions = {}): Logger {
 	const maxBytes = Math.max(0, Math.floor(opts.maxBytes ?? configured?.maxBytes ?? 1024 * 1024));
 	const maxFiles = Math.max(0, Math.floor(opts.maxFiles ?? configured?.maxFiles ?? 3));
 	let level = opts.level ?? configured?.level ?? "info";
-	const file = join(dir, `${name}.log`);
+	const file = join(dir, `${name}.jsonl`);
 	mkdirSync(dirname(file), { recursive: true });
 
 	function rotateIfNeeded(nextBytes: number): void {
@@ -70,7 +76,7 @@ export function createLogger(name: string, opts: LoggerOptions = {}): Logger {
 
 	function log(candidate: LogLevel, message: string): void {
 		if (!isEnabled(candidate)) return;
-		const line = `${new Date().toISOString()} ${candidate} ${message}\n`;
+		const line = `${JSON.stringify({ ts: new Date().toISOString(), level: candidate, message } satisfies LoggerRecord)}\n`;
 		mkdirSync(dirname(file), { recursive: true });
 		rotateIfNeeded(Buffer.byteLength(line));
 		appendFileSync(file, line);
