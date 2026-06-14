@@ -1,6 +1,6 @@
 export { connect, type FullscreenComponentFactory, type FullscreenLease, type RemindersClient, type UtilsClient, type UtilsClientOptions, type WidgetSetOptions } from "./client/index.ts";
 export { defineConfig, type DeepPartial, type DefinedConfig, type DefineConfigOptions } from "./config/index.ts";
-export { createLogger, LOG_LEVELS, loggerLevelSchema, loggingConfigSchema, type Logger, type LoggerLevel, type LoggerOptions, type LoggerRecord, type LoggingConfig, type LogLevel } from "./logger/index.ts";
+export { createLogger, LOG_LEVELS, loggerLevelSchema, loggingConfigSchema, type Logger, type LoggerFields, type LoggerLevel, type LoggerOptions, type LoggerRecord, type LoggingConfig, type LogLevel } from "./logger/index.ts";
 export { utilsConfigSchema, type UtilsConfig } from "./utils-config.ts";
 export * from "./pane/key-dispatch.ts";
 export * from "./pane/state.ts";

@@ -77,12 +77,12 @@ const log = createLogger("my-extension", {
 });
 
 log.debug("hidden at info level");
-log.info("started");
-log.warn("slow path");
+log.info("started", { command: "example" });
+log.warn("slow path", { durationMs: 1200 });
 log.error("failed");
 ```
 
-`createLogger(name)` writes JSONL to `getAgentDir()/log/<name>.jsonl` by default. Each line is `{"ts":"...","level":"info","message":"started"}`. `level` is typed as `"debug" | "info" | "warn" | "error" | "silent"`; `maxFiles` controls retained rotations (`.1`, `.2`, ...). If `level`, `maxFiles`, or `maxBytes` are omitted, the value comes from `getAgentDir()/config/utils.jsonc` `logging` defaults. Explicit options always win.
+`createLogger(name)` writes JSONL to `getAgentDir()/log/<name>.jsonl` by default. Each line is a flat object like `{"ts":"...","level":"info","message":"started","command":"example"}`. `ts`, `level`, and `message` are logger-owned fields and caller fields with those names are ignored. `level` is typed as `"debug" | "info" | "warn" | "error" | "silent"`; `maxFiles` controls retained rotations (`.1`, `.2`, ...). If `level`, `maxFiles`, or `maxBytes` are omitted, the value comes from `getAgentDir()/config/utils.jsonc` `logging` defaults. Explicit options always win.
 
 Override when needed:
 

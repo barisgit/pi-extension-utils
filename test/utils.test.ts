@@ -483,6 +483,26 @@ test("logger writes JSONL lines, creates dirs, rotates, filters levels, and reje
 	assert.throws(() => createLogger("bad\\name", { dir }), /path separators/);
 });
 
+test("logger flattens structured fields and preserves reserved fields", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-extension-utils-"));
+	const logger = createLogger("fields", { dir, maxBytes: 0, level: "debug" });
+	logger.info("session started", {
+		cwd: "/repo",
+		command: "demo",
+		attempt: 2,
+		ts: "caller ts",
+		level: "error",
+		message: "caller message",
+	});
+	const [entry] = readJsonl(join(dir, "fields.jsonl"));
+	assert.match(entry.ts, /^\d{4}-\d{2}-\d{2}T/);
+	assert.equal(entry.level, "info");
+	assert.equal(entry.message, "session started");
+	assert.equal(entry.cwd, "/repo");
+	assert.equal(entry.command, "demo");
+	assert.equal(entry.attempt, 2);
+});
+
 test("logger supports silent level and maxBytes zero", () => {
 	const dir = mkdtempSync(join(tmpdir(), "pi-extension-utils-"));
 	const silent = createLogger("silent", { dir, level: "silent" });

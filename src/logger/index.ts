@@ -15,12 +15,14 @@ export interface LoggerOptions {
 	level?: LoggerLevel;
 }
 
+export type LoggerFields = Record<string, unknown>;
+
 export interface Logger {
-	debug(message: string): void;
-	info(message: string): void;
-	warn(message: string): void;
-	error(message: string): void;
-	log(level: LogLevel, message: string): void;
+	debug(message: string, fields?: LoggerFields): void;
+	info(message: string, fields?: LoggerFields): void;
+	warn(message: string, fields?: LoggerFields): void;
+	error(message: string, fields?: LoggerFields): void;
+	log(level: LogLevel, message: string, fields?: LoggerFields): void;
 	setLevel(level: LoggerLevel): void;
 	isEnabled(level: LogLevel): boolean;
 }
@@ -29,7 +31,10 @@ export interface LoggerRecord {
 	ts: string;
 	level: LogLevel;
 	message: string;
+	[field: string]: unknown;
 }
+
+const RESERVED_RECORD_FIELDS = new Set(["ts", "level", "message"]);
 
 const LEVEL_WEIGHT: Record<LoggerLevel, number> = {
 	debug: 10,
@@ -74,26 +79,30 @@ export function createLogger(name: string, opts: LoggerOptions = {}): Logger {
 		return LEVEL_WEIGHT[candidate] >= LEVEL_WEIGHT[level];
 	}
 
-	function log(candidate: LogLevel, message: string): void {
+	function log(candidate: LogLevel, message: string, fields: LoggerFields = {}): void {
 		if (!isEnabled(candidate)) return;
-		const line = `${JSON.stringify({ ts: new Date().toISOString(), level: candidate, message } satisfies LoggerRecord)}\n`;
+		const record: LoggerRecord = { ts: new Date().toISOString(), level: candidate, message };
+		for (const [key, value] of Object.entries(fields)) {
+			if (!RESERVED_RECORD_FIELDS.has(key)) record[key] = value;
+		}
+		const line = `${JSON.stringify(record)}\n`;
 		mkdirSync(dirname(file), { recursive: true });
 		rotateIfNeeded(Buffer.byteLength(line));
 		appendFileSync(file, line);
 	}
 
 	return {
-		debug(message) {
-			log("debug", message);
+		debug(message, fields) {
+			log("debug", message, fields);
 		},
-		info(message) {
-			log("info", message);
+		info(message, fields) {
+			log("info", message, fields);
 		},
-		warn(message) {
-			log("warn", message);
+		warn(message, fields) {
+			log("warn", message, fields);
 		},
-		error(message) {
-			log("error", message);
+		error(message, fields) {
+			log("error", message, fields);
 		},
 		log,
 		setLevel(nextLevel) {
