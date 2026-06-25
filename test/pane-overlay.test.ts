@@ -270,6 +270,29 @@ test("collapse key hides primary to collapsed width and forces detail focus", ()
 	assert.equal(scrolled, collapsed);
 });
 
+test("collapse label can be a function of the collapsed state (e.g. open vs hide hint)", () => {
+	const { component, render } = mount(
+		baseOptions({
+			legendPlacement: "primary",
+			primary: { mode: "cursor", rows: ["a"], renderRow: (r) => String(r) },
+			detail: { rows: () => ["x"], title: "Detail" },
+			collapse: { key: "c", collapsedWidth: 0, label: (collapsed) => (collapsed ? "open sidebar" : "hide sidebar") },
+		}),
+		60,
+		24,
+	);
+	// Expanded: the legend invites collapsing.
+	const expanded = render().join("\n");
+	assert.match(expanded, /hide sidebar/);
+	assert.doesNotMatch(expanded, /open sidebar/);
+	// Collapsed: the same key now reads as the reopen hint.
+	component.handleInput("c");
+	const collapsed = render().join("\n");
+	// The primary legend is gone, but the reopen hint surfaces in the detail footer.
+	assert.match(collapsed, /c open sidebar/);
+	assert.doesNotMatch(collapsed, /hide sidebar/);
+});
+
 test("primary legend placement consumes primary viewport but not detail viewport", () => {
 	const { render } = mount(baseOptions({
 		height: 10,

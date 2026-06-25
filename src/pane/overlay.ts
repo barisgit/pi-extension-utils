@@ -100,7 +100,12 @@ export interface PaneOverlaySplitOptions {
 export interface PaneCollapseOptions {
 	key?: string;
 	collapsedWidth?: number;
-	label?: string;
+	/**
+	 * Legend/divider label for the collapse toggle. A function receives the
+	 * current collapsed state so the hint can read e.g. "hide sidebar" when open
+	 * and "open sidebar" when collapsed.
+	 */
+	label?: string | ((collapsed: boolean) => string);
 }
 
 export interface PaneOverlayOptions<T = unknown, Row = unknown> {
@@ -219,6 +224,10 @@ export function paneOverlay<T = undefined, Row = unknown>(
 		let finished = false;
 		let focus: "primary" | "detail" = "primary";
 		let collapsed = false;
+		const collapseLabel = (fallback: string): string => {
+			const label = collapse?.label;
+			return typeof label === "function" ? label(collapsed) : (label ?? fallback);
+		};
 		let leftFraction = split.initialFraction ?? 0.5;
 		let lastRenderWidth = 80;
 		let lastSelectedKey: string | undefined;
@@ -486,7 +495,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			entries.push({ key: "u/d", label: "half-page" });
 			entries.push({ key: "g/G", label: "top/bottom" });
 			if (!collapsed) entries.push({ key: "[/]", label: "resize" });
-			if (collapse) entries.push({ key: collapseKey, label: collapse.label ?? "collapse" });
+			if (collapse) entries.push({ key: collapseKey, label: collapseLabel("collapse") });
 			for (const action of customActions) {
 				if (action.showInLegend === false) continue;
 				if (action.when && !action.when(ctx)) continue;
@@ -611,10 +620,18 @@ export function paneOverlay<T = undefined, Row = unknown>(
 						: primaryRows.length > primaryHeight
 							? formatScrollInfo(primaryState.scrollOffset, Math.max(0, primaryRows.length - primaryHeight), { style: "position" })
 							: "");
-				const detailFooterText = resolveValue(options.detail.footer, ctx)
-					?? (detailRows.length > detailHeight
+				const detailFooterBase =
+					resolveValue(options.detail.footer, ctx) ??
+					(detailRows.length > detailHeight
 						? formatScrollInfo(detailState.scrollOffset, Math.max(0, detailRows.length - detailHeight), { style: "position" })
 						: "");
+				// When the primary pane is collapsed its legend (and the collapse hint with
+				// it) disappears, so the user can't see how to reopen it. Surface the
+				// reopen hint in the always-visible detail footer instead.
+				const detailFooterText =
+					collapsed && collapse
+						? [`${collapseKey} ${collapseLabel("expand")}`, detailFooterBase].filter(Boolean).join(" \u00b7 ")
+						: detailFooterBase;
 
 				const bottomPrimary = titledBottomSegment(chromeTheme, primaryWidth, primaryFooterText, focus === "primary");
 				const bottomDetail = titledBottomSegment(chromeTheme, detailWidth, detailFooterText, focus === "detail");
@@ -632,7 +649,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 					} else if (infoVisibleCount > 0 && row > infoStart && row < legendStart) {
 						primaryCell = infoLines[row - infoStart - 1] ?? "";
 					} else if (legendPlacement === "primary" && row === legendStart && legendLines.length > 0) {
-						primaryCell = flatRule(chromeTheme, collapse?.label ?? "actions", primaryWidth);
+						primaryCell = flatRule(chromeTheme, collapse ? collapseLabel("actions") : "actions", primaryWidth);
 					}
 					if (legendPlacement === "primary" && row > legendStart) {
 						const legendIndex = row - legendStart - 1;
