@@ -1,6 +1,6 @@
 {
 	"name": "pi-extension-utils",
-	"version": "0.5.1",
+	"version": "0.5.2",
 	"description": "Shared Pi extension utilities for coordinated widgets, fullscreen leases, and logging.",
 	"type": "module",
 	"main": "./dist/src/index.js",
