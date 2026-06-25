@@ -64,13 +64,18 @@ function createPi(bus, ctx) {
 }
 
 function setAgentDir(agentDir) {
-	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = agentDir;
+	// Redirect getAgentDir() regardless of which app fork's SDK is installed:
+	// the env var prefix derives from the SDK's APP_NAME (e.g. PI_ upstream, FO_ fork).
+	const envVars = ["PI_CODING_AGENT_DIR", "FO_CODING_AGENT_DIR"];
+	const previous = envVars.map((name) => [name, process.env[name]]);
+	for (const name of envVars) process.env[name] = agentDir;
 	return () => {
-		if (previousAgentDir === undefined) {
-			delete process.env.PI_CODING_AGENT_DIR;
-		} else {
-			process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		for (const [name, value] of previous) {
+			if (value === undefined) {
+				delete process.env[name];
+			} else {
+				process.env[name] = value;
+			}
 		}
 		utilsConfig.reload();
 	};

@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, test } from "node:test";
+import { afterEach, beforeEach, describe, test } from "node:test";
 import { expect } from "./reminders-expect.ts";
 
 import { registerReminderHost } from "../src/reminders/host.ts";
@@ -76,7 +76,35 @@ const mockTheme = {
 	fg: (_color: string, value: string) => value,
 };
 
+// The SDK derives its agent-dir env var from APP_NAME (PI_ upstream, FO_ in forks),
+// so redirect every known prefix to keep tests hermetic regardless of installed fork.
+const AGENT_DIR_ENV_VARS = ["PI_CODING_AGENT_DIR", "FO_CODING_AGENT_DIR"] as const;
+
+function setAgentDirEnv(dir: string): () => void {
+	const previous = AGENT_DIR_ENV_VARS.map((name) => [name, process.env[name]] as const);
+	for (const name of AGENT_DIR_ENV_VARS) process.env[name] = dir;
+	return () => {
+		for (const [name, value] of previous) {
+			if (value === undefined) delete process.env[name];
+			else process.env[name] = value;
+		}
+	};
+}
+
 describe("pi-reminders extension integration", () => {
+	let agentDir: string;
+	let restoreAgentDir: () => void;
+
+	beforeEach(() => {
+		agentDir = mkdtempSync(join(tmpdir(), "pi-reminders-agent-"));
+		restoreAgentDir = setAgentDirEnv(agentDir);
+	});
+
+	afterEach(() => {
+		restoreAgentDir();
+		rmSync(agentDir, { recursive: true, force: true });
+	});
+
 	test("wires reminder events to the manager", async () => {
 		const pi = new MockPi();
 		registerReminderHost(pi as any);
@@ -309,11 +337,8 @@ describe("pi-reminders extension integration", () => {
 
 	test("/reminders command saves debug show-all setting", async () => {
 		const previous = process.env.PI_REMINDERS_DEBUG;
-		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 		delete process.env.PI_REMINDERS_DEBUG;
 		const cwd = mkdtempSync(join(tmpdir(), "pi-reminders-test-"));
-		const agentDir = mkdtempSync(join(tmpdir(), "pi-reminders-agent-"));
-		process.env.PI_CODING_AGENT_DIR = agentDir;
 		try {
 			const pi = new MockPi();
 			registerReminderHost(pi as any);
@@ -346,16 +371,10 @@ describe("pi-reminders extension integration", () => {
 			expect(readFileSync(join(agentDir, "config", "utils.jsonc"), "utf8")).toContain('"debugShowAllInTui": true');
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
-			rmSync(agentDir, { recursive: true, force: true });
 			if (previous === undefined) {
 				delete process.env.PI_REMINDERS_DEBUG;
 			} else {
 				process.env.PI_REMINDERS_DEBUG = previous;
-			}
-			if (previousAgentDir === undefined) {
-				delete process.env.PI_CODING_AGENT_DIR;
-			} else {
-				process.env.PI_CODING_AGENT_DIR = previousAgentDir;
 			}
 		}
 	});
