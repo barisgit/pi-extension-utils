@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createRemindersClient } from "../reminders/client.ts";
-import { createUiClient } from "../ui/client.ts";
+import { createTuiModeCapture, createUiClient } from "../ui/client.ts";
 import { connectWidgetCoordinator } from "../widgets/client.ts";
 import type { UtilsClient, UtilsClientOptions } from "./types.ts";
 
@@ -14,7 +14,8 @@ let nextClientId = 1;
 export function connect(pi: ExtensionAPI, opts: UtilsClientOptions): UtilsClient {
 	const clientId = opts.clientId ?? `client-${process.pid}-${Date.now()}-${nextClientId++}`;
 	let disposed = false;
-	const coordinator = connectWidgetCoordinator(pi, { ctx: opts.ctx, clientId });
+	const tuiCapture = createTuiModeCapture();
+	const coordinator = connectWidgetCoordinator(pi, { ctx: opts.ctx, clientId, tui: tuiCapture });
 	return {
 		clientId,
 		get mode() {
@@ -22,7 +23,7 @@ export function connect(pi: ExtensionAPI, opts: UtilsClientOptions): UtilsClient
 		},
 		widgets: coordinator.widgets,
 		fullscreen: coordinator.fullscreen,
-		ui: createUiClient(coordinator.fullscreen, opts.ctx),
+		ui: createUiClient(coordinator.fullscreen, opts.ctx, tuiCapture),
 		reminders: createRemindersClient(pi, () => disposed),
 		dispose() {
 			if (disposed) return;

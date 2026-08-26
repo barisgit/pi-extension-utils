@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type TuiModeCapture } from "../ui/client.ts";
 import { basePayload, EVENTS, PROTOCOL_VERSION, type ReadyPayload, type WidgetFactory, type WidgetPlacement } from "./protocol.ts";
 
 export interface WidgetSetOptions {
@@ -28,6 +29,8 @@ export interface WidgetCoordinatorClient {
 interface WidgetCoordinatorClientOptions {
 	ctx: ExtensionContext;
 	clientId: string;
+	/** Optional shared TUI-mode capture fed by every widget factory invocation. */
+	tui?: TuiModeCapture;
 }
 
 interface WidgetRecord {
@@ -38,6 +41,13 @@ interface WidgetRecord {
 }
 
 let nextLeaseId = 1;
+
+function withTuiCapture(factory: WidgetFactory, capture: TuiModeCapture): WidgetFactory {
+	return (tui, theme) => {
+		capture.noteTui(tui);
+		return factory(tui, theme);
+	};
+}
 
 export function connectWidgetCoordinator(pi: ExtensionAPI, opts: WidgetCoordinatorClientOptions): WidgetCoordinatorClient {
 	const { clientId } = opts;
@@ -118,12 +128,17 @@ export function connectWidgetCoordinator(pi: ExtensionAPI, opts: WidgetCoordinat
 		widgets: {
 			set(placement: WidgetPlacement, key: string, factory: WidgetFactory, setOpts: WidgetSetOptions = {}) {
 				if (disposed) return;
-				const record = { placement, key, factory, order: setOpts.order ?? 0 };
+				const record = {
+					placement,
+					key,
+					factory: opts.tui ? withTuiCapture(factory, opts.tui) : factory,
+					order: setOpts.order ?? 0,
+				};
 				widgets.set(widgetId(placement, key), record);
 				if (coordinated) {
 					emitRegister(record);
 				} else if (leases.size === 0) {
-					opts.ctx.ui.setWidget(key, factory, { placement });
+					opts.ctx.ui.setWidget(key, record.factory, { placement });
 				}
 			},
 			remove(placement: WidgetPlacement, key: string) {
