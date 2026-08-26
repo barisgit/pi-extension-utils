@@ -140,13 +140,49 @@ export function registerWidgetHost(pi: ExtensionAPI): void {
 }
 
 function createHostComponent(tui: Parameters<WidgetFactory>[0], theme: Parameters<WidgetFactory>[1], records: WidgetRecord[], hidden: boolean): ReturnType<WidgetFactory> {
-	const components = hidden ? [] : records.map((record) => record.factory(tui, theme));
+	// A widget whose factory or render throws (e.g. an extension holding a
+	// ctx that went stale during session reload) must never take down the
+	// whole agent: render failures drop that widget until its client
+	// re-registers. Records are replaced wholesale on every re-registration
+	// and remount, so a dropped component cannot linger past the handshake.
+	const healthy: ReturnType<WidgetFactory>[] = [];
+	if (!hidden) {
+		for (const record of records) {
+			try {
+				healthy.push(record.factory(tui, theme));
+			} catch (error) {
+				console.warn(
+					`pi-extension-utils: widget factory for ${record.clientId}/${record.key} threw, dropping it until re-registration`,
+					error instanceof Error ? error.message : error,
+				);
+			}
+		}
+	}
 	return {
 		render(width) {
-			return components.flatMap((component) => component.render(width));
+			const lines: string[] = [];
+			for (const component of [...healthy]) {
+				try {
+					lines.push(...component.render(width));
+				} catch (error) {
+					const failedIndex = healthy.indexOf(component);
+					if (failedIndex >= 0) healthy.splice(failedIndex, 1);
+					console.warn(
+						`pi-extension-utils: widget render threw, dropping it until re-registration`,
+					error instanceof Error ? error.message : error,
+				);
+				}
+			}
+			return lines;
 		},
 		invalidate() {
-			for (const component of components) component.invalidate();
+			for (const component of healthy) {
+				try {
+					component.invalidate();
+				} catch {
+					// invalidate is best-effort; ignore failures
+				}
+			}
 		},
 	};
 }
