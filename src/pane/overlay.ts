@@ -1,5 +1,6 @@
 import type { FullscreenComponentFactory } from "../ui/client.ts";
 import { dispatchNavKeys } from "./key-dispatch.ts";
+import { parseSgrMouseEvent, type SgrMouseEvent } from "./mouse.ts";
 import {
 	computeFixedSidebarLayout,
 	computeSplitPaneLayout,
@@ -229,6 +230,9 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			return typeof label === "function" ? label(collapsed) : (label ?? fallback);
 		};
 		let leftFraction = split.initialFraction ?? 0.5;
+		let dividerDragActive = false;
+		let lastPrimaryClick: { row: number; col: number; at: number } | undefined;
+		let componentRef: { handleInput(data: string): void } | undefined;
 		let lastRenderWidth = 80;
 		let lastSelectedKey: string | undefined;
 		let initialSelectionApplied = false;
@@ -512,6 +516,140 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			return entries.map((entry) => chromeTheme.fg("dim", renderKeyRow(entry.key, entry.label, totalWidth, keyWidth)));
 		};
 
+		/**
+		 * Mouse support (fullscreen TUI only, where a focused overlay receives raw
+		 * SGR sequences). Wheel scrolls the pane under the pointer; click selects
+		 * rows and focuses panes; double-click activates (synthesizes Enter);
+		 * dragging the divider resizes the split. All bounds are in overlay-local
+		 * coordinates: the overlay mounts top-left at 100% width, so terminal
+		 * columns/rows map 1:1 to rendered lines.
+		 */
+		const handleMouseEvent = (event: SgrMouseEvent): void => {
+			if (finished) return;
+			const totalWidth = lastRenderWidth;
+			if (totalWidth <= 0) return;
+			const bodyHeight = computeBodyHeight(tui, options.height);
+			const { primaryWidth, detailWidth } = currentWidths();
+			const { selectedIndex, selectedRow, selectedKey } = computeSelectionFromRows(
+				getPrimaryRows(makeContext(0, undefined, "", primaryWidth, detailWidth)),
+				bodyHeight,
+			);
+			const ctx = makeContext(selectedIndex, selectedRow, selectedKey, primaryWidth, detailWidth);
+			const detailRows = options.detail.rows(ctx) ?? [];
+			const legendLineCount = legendPlacement === "primary"
+				? renderLegendLines(legendEntries(ctx), totalWidth).length
+				: 0;
+			const maxRow = 1 + bodyHeight + (legendPlacement === "footer"
+				? renderLegendLines(legendEntries(ctx), totalWidth).length
+				: 0);
+			const inPrimaryColumn = primaryWidth > 0 && event.x >= 1 && event.x <= primaryWidth;
+			const onDivider = !collapsed && primaryWidth > 0 && event.x === primaryWidth + 1;
+			const inDetailColumn = event.x > primaryWidth + 1;
+
+			// Wheel: scroll the pane under the pointer (shift accelerates).
+			if (event.button === 64 || event.button === 65) {
+				if (event.y > maxRow) return;
+				const lines = (event.button === 64 ? -1 : 1) * (event.shift ? 5 : 3);
+				if (inPrimaryColumn || (primaryWidth > 0 && event.x <= primaryWidth + 1)) {
+					focus = "primary";
+					applyPrimaryNav(bodyHeight, legendLineCount, (state, rows, viewportHeight) => {
+						if ((options.primary.mode ?? "scroll") === "cursor") {
+							const indexes = selectableIndexes(rows);
+							if (indexes.length === 0) return;
+							const currentIndex = nearestSelectableIndex(rows, state.cursor);
+							const currentOrdinal = Math.max(0, indexes.indexOf(currentIndex));
+							const nextOrdinal = Math.max(0, Math.min(indexes.length - 1, currentOrdinal + lines));
+							state.cursor = indexes[nextOrdinal] ?? currentIndex;
+							const next = ensureCursorVisible({ cursor: state.cursor, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight });
+							state.scrollOffset = next.scroll;
+						} else {
+							state.scrollOffset = moveScrollOffset({ offset: state.scrollOffset, contentLength: rows.length, viewportHeight }, lines);
+						}
+					});
+				} else {
+					focus = "detail";
+					markDetailManual();
+					detailState.scrollOffset = moveScrollOffset(
+						{ offset: detailState.scrollOffset, contentLength: detailRows.length, viewportHeight: Math.max(1, bodyHeight) },
+						lines,
+					);
+				}
+				requestRender();
+				return;
+			}
+
+			// Divider drag: press on the divider starts it, motion resizes, release ends.
+			if (onDivider && event.press && event.button === 0) {
+				dividerDragActive = true;
+				return;
+			}
+			if (event.motion && dividerDragActive) {
+				const usable = Math.max(1, totalWidth - 3);
+				const minFraction = Math.max(
+					split.minFraction ?? 0,
+					(split.minPrimaryWidth ?? 8) / usable,
+				);
+				const maxFraction = Math.min(
+					split.maxFraction ?? 1,
+					(usable - (split.minDetailWidth ?? 8)) / usable,
+					split.maxPrimaryWidth !== undefined ? split.maxPrimaryWidth / usable : 1,
+				);
+				leftFraction = Math.max(Math.min(minFraction, maxFraction), Math.min(maxFraction, (event.x - 1) / usable));
+				requestRender();
+				return;
+			}
+			if (event.release && event.button === 0 && dividerDragActive) {
+				dividerDragActive = false;
+				return;
+			}
+
+			if (!event.press || event.button !== 0 || event.y > maxRow) return;
+
+			// Title/border rows: click focuses the pane under the pointer.
+			if (event.y === 0 || event.y === bodyHeight + 1) {
+				if (primaryWidth > 0 && event.x <= primaryWidth + 1) focus = "primary";
+				else focus = "detail";
+				ensureFocusDetailWhenCollapsed();
+				requestRender();
+				return;
+			}
+
+			// Body rows.
+			if (event.y >= 1 && event.y <= bodyHeight) {
+				if (onDivider) return;
+				if (inPrimaryColumn && !collapsed) {
+					focus = "primary";
+					if ((options.primary.mode ?? "scroll") === "cursor") {
+						const rowIndex = event.y - 1;
+						const absoluteIndex = primaryState.scrollOffset + rowIndex;
+						applyPrimaryNav(bodyHeight, legendLineCount, (state, rows, viewportHeight) => {
+							if (absoluteIndex >= rows.length) return;
+							state.cursor = nearestSelectableIndex(rows, absoluteIndex);
+							const next = ensureCursorVisible({ cursor: state.cursor, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight });
+							state.scrollOffset = next.scroll;
+						});
+						const now = Date.now();
+						const isDoubleClick = lastPrimaryClick
+							&& lastPrimaryClick.row === event.y
+							&& lastPrimaryClick.col === event.x
+							&& now - lastPrimaryClick.at < 450;
+						lastPrimaryClick = { row: event.y, col: event.x, at: now };
+						requestRender();
+						if (isDoubleClick) componentRef?.handleInput("\r");
+						return;
+					}
+					requestRender();
+					return;
+				}
+				if (inDetailColumn) {
+					focus = "detail";
+					ensureFocusDetailWhenCollapsed();
+					requestRender();
+					return;
+				}
+			}
+		};
+
 		const component: PaneOverlayComponent = {
 			dispose() {
 				// no-op is acceptable
@@ -674,6 +812,11 @@ export function paneOverlay<T = undefined, Row = unknown>(
 
 			handleInput(data: string): void {
 				if (finished) return;
+				const mouseEvent = parseSgrMouseEvent(data);
+				if (mouseEvent) {
+					handleMouseEvent(mouseEvent);
+					return;
+				}
 				const bodyHeight = computeBodyHeight(tui, options.height);
 
 				if (matchesAny(data, closeKeys)) {
@@ -798,6 +941,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			},
 		};
 
+		componentRef = component;
 		return component;
 	};
 }
