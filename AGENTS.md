@@ -20,6 +20,7 @@ Shared utility library for Pi extensions: widget coordination (host + client), f
 - Widget factories are wrapped by `withTuiCapture` when a capture is provided. Fallback registration must pass `record.factory` (the wrapped one), never the raw `factory` argument — the wrap is the point.
 - Widget host/client coordinate over an event protocol with `PROTOCOL_VERSION`; the host ignores unknown fields and rejects newer protocol versions. Bump the version when event payloads change shape.
 - All pi-facing types are structural on purpose: this package must not take a hard dependency on pi-tui/pi-coding-agent types in client-facing signatures.
+- Pane-overlay wheels mirror Pi fullscreen semantics: normalize SGR coordinates to zero-based positions, move one logical row per report regardless of modifiers, route by the body under the pointer, chain unconsumed detail movement to the primary pane, reattach sticky-bottom state upon reaching the end, and hide activity scrollbars after 1 second. Scrollbar styling must tolerate older Pi themes that throw on the newer `scrollbarThumb` role (`selectedBg`, then `dim`, are the compatibility fallbacks). Pi 0.84 does not forward ordinary SGR clicks to focused overlays, so do not claim runtime click/drag support without an upstream deferral seam.
 
 ## Known pitfalls
 

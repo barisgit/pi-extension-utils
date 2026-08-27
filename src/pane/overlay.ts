@@ -236,6 +236,8 @@ export function paneOverlay<T = undefined, Row = unknown>(
 		let lastRenderWidth = 80;
 		let lastSelectedKey: string | undefined;
 		let initialSelectionApplied = false;
+		const primaryScrollbar = { visible: false, timer: undefined as ReturnType<typeof setTimeout> | undefined };
+		const detailScrollbar = { visible: false, timer: undefined as ReturnType<typeof setTimeout> | undefined };
 
 		const primaryState = { cursor: 0, scrollOffset: 0 };
 		const detailState = { scrollOffset: 0, sticky: stickyBottom };
@@ -243,6 +245,51 @@ export function paneOverlay<T = undefined, Row = unknown>(
 
 		const requestRender = () => {
 			(tui as { requestRender?(): void } | null)?.requestRender?.();
+		};
+
+		const markScrollbarActivity = (scrollbar: typeof detailScrollbar) => {
+			scrollbar.visible = true;
+			if (scrollbar.timer) clearTimeout(scrollbar.timer);
+			scrollbar.timer = setTimeout(() => {
+				scrollbar.timer = undefined;
+				scrollbar.visible = false;
+				requestRender();
+			}, 1_000);
+			scrollbar.timer.unref?.();
+		};
+
+		const paintScrollbarThumb = (
+			text: string,
+			width: number,
+			row: number,
+			viewportHeight: number,
+			contentLength: number,
+			offset: number,
+			visible: boolean,
+		): string => {
+			const cell = padRight(clipStyled(text, width), width);
+			if (!visible || width <= 0 || viewportHeight <= 0 || contentLength <= viewportHeight) return cell;
+			const thumbHeight = Math.max(Math.min(2, viewportHeight), Math.min(viewportHeight, Math.round((viewportHeight * viewportHeight) / contentLength)));
+			const maxOffset = Math.max(0, contentLength - viewportHeight);
+			const maxThumbTop = viewportHeight - thumbHeight;
+			const thumbTop = maxOffset === 0 ? 0 : Math.round((offset / maxOffset) * maxThumbTop);
+			if (row < thumbTop || row >= thumbTop + thumbHeight) return cell;
+			const prefix = padRight(clipStyled(cell, width - 1), width - 1);
+			let thumb: string | undefined;
+			try {
+				thumb = chromeTheme.bg?.("scrollbarThumb", " ");
+			} catch {
+				// Older Pi themes expose selectedBg but not scrollbarThumb.
+			}
+			if (thumb === undefined) {
+				try {
+					thumb = chromeTheme.bg?.("selectedBg", " ");
+				} catch {
+					// Minimal structural themes may not support background roles.
+				}
+			}
+			thumb ??= chromeTheme.fg("dim", "▐");
+			return prefix + thumb;
 		};
 
 		const finish = (result: T) => {
@@ -419,7 +466,12 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			mutator: (state: typeof primaryState, rows: PaneOverlayPrimaryRow<Row>[], viewportHeight: number) => void,
 		) => {
 			const { primaryRows, viewportHeight } = withPrimaryViewport(bodyHeight, legendLineCount);
+			const previousCursor = primaryState.cursor;
+			const previousOffset = primaryState.scrollOffset;
 			mutator(primaryState, primaryRows, viewportHeight);
+			if (primaryState.cursor !== previousCursor || primaryState.scrollOffset !== previousOffset) {
+				markScrollbarActivity(primaryScrollbar);
+			}
 		};
 
 		const movePrimary = (delta: PaneDirection, bodyHeight: number, legendLineCount: number) => {
@@ -483,11 +535,28 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			});
 		};
 
-		const markDetailManual = () => {
-			detailState.sticky = false;
+		const setDetailOffset = (offset: number, contentLength: number, viewportHeight: number) => {
+			const height = Math.max(1, viewportHeight);
+			const maxOffset = endScrollOffset(contentLength, height);
+			const previousOffset = detailState.scrollOffset;
+			detailState.scrollOffset = Math.max(0, Math.min(offset, maxOffset));
+			detailState.sticky = stickyBottom && detailState.scrollOffset === maxOffset;
+			if (detailState.scrollOffset !== previousOffset) markScrollbarActivity(detailScrollbar);
 			if (perSelectionScroll && lastSelectedKey !== undefined) {
-				getDetailStateForKey(lastSelectedKey).sticky = false;
+				const state = getDetailStateForKey(lastSelectedKey);
+				state.offset = detailState.scrollOffset;
+				state.sticky = detailState.sticky;
 			}
+		};
+
+		const moveDetail = (delta: number, contentLength: number, viewportHeight: number): number => {
+			const previousOffset = detailState.scrollOffset;
+			const nextOffset = moveScrollOffset(
+				{ offset: previousOffset, contentLength, viewportHeight: Math.max(1, viewportHeight) },
+				delta,
+			);
+			setDetailOffset(nextOffset, contentLength, viewportHeight);
+			return delta - (detailState.scrollOffset - previousOffset);
 		};
 
 		const legendEntries = (ctx: PaneOverlayContext<T, Row>): { key: string; label: string }[] => {
@@ -517,8 +586,8 @@ export function paneOverlay<T = undefined, Row = unknown>(
 		};
 
 		/**
-		 * Mouse support (fullscreen TUI only, where a focused overlay receives raw
-		 * SGR sequences). Wheel scrolls the pane under the pointer; click selects
+		 * Mouse support for forwarded SGR sequences. Wheel scrolls the pane under
+		 * the pointer; click selects
 		 * rows and focuses panes; double-click activates (synthesizes Enter);
 		 * dragging the divider resizes the split. All bounds are in overlay-local
 		 * coordinates: the overlay mounts top-left at 100% width, so terminal
@@ -544,37 +613,22 @@ export function paneOverlay<T = undefined, Row = unknown>(
 				: 0);
 			const inPrimaryColumn = primaryWidth > 0 && event.x >= 1 && event.x <= primaryWidth;
 			const onDivider = !collapsed && primaryWidth > 0 && event.x === primaryWidth + 1;
-			const inDetailColumn = event.x > primaryWidth + 1;
+			const inDetailColumn = event.x > primaryWidth + 1 && event.x < totalWidth - 1;
+			const inBodyRow = event.y >= 1 && event.y <= bodyHeight;
 
-			// Wheel: scroll the pane under the pointer (shift accelerates).
+			// Wheel: move exactly one logical row per terminal report, like TuiAltScreen.
 			if (event.button === 64 || event.button === 65) {
 				if (event.y > maxRow) return;
 				const direction = event.button === 64 ? -1 : 1;
-				if (inPrimaryColumn || (primaryWidth > 0 && event.x <= primaryWidth + 1)) {
-					const lines = direction * (event.shift ? 5 : 1);
+				if (!inDetailColumn || (!inBodyRow && !collapsed)) {
 					focus = "primary";
-					applyPrimaryNav(bodyHeight, legendLineCount, (state, rows, viewportHeight) => {
-						if ((options.primary.mode ?? "scroll") === "cursor") {
-							const indexes = selectableIndexes(rows);
-							if (indexes.length === 0) return;
-							const currentIndex = nearestSelectableIndex(rows, state.cursor);
-							const currentOrdinal = Math.max(0, indexes.indexOf(currentIndex));
-							const nextOrdinal = Math.max(0, Math.min(indexes.length - 1, currentOrdinal + lines));
-							state.cursor = indexes[nextOrdinal] ?? currentIndex;
-							const next = ensureCursorVisible({ cursor: state.cursor, scroll: state.scrollOffset, itemCount: rows.length, viewportHeight });
-							state.scrollOffset = next.scroll;
-						} else {
-							state.scrollOffset = moveScrollOffset({ offset: state.scrollOffset, contentLength: rows.length, viewportHeight }, lines);
-						}
-					});
+					movePrimary(direction, bodyHeight, legendLineCount);
 				} else {
-					const lines = direction * (event.shift ? 5 : 3);
 					focus = "detail";
-					markDetailManual();
-					detailState.scrollOffset = moveScrollOffset(
-						{ offset: detailState.scrollOffset, contentLength: detailRows.length, viewportHeight: Math.max(1, bodyHeight) },
-						lines,
-					);
+					const remaining = moveDetail(direction, detailRows.length, bodyHeight);
+					if (remaining !== 0) {
+						movePrimary(remaining as PaneDirection, bodyHeight, legendLineCount);
+					}
 				}
 				requestRender();
 				return;
@@ -654,7 +708,8 @@ export function paneOverlay<T = undefined, Row = unknown>(
 
 		const component: PaneOverlayComponent = {
 			dispose() {
-				// no-op is acceptable
+				if (primaryScrollbar.timer) clearTimeout(primaryScrollbar.timer);
+				if (detailScrollbar.timer) clearTimeout(detailScrollbar.timer);
 			},
 
 			render(width: number): string[] {
@@ -795,7 +850,24 @@ export function paneOverlay<T = undefined, Row = unknown>(
 						const legendIndex = row - legendStart - 1;
 						primaryCell = legendIndex < legendLines.length ? padRight(legendLines[legendIndex], primaryWidth) : "";
 					}
-					const detailCell = detailVisible[row] ?? "";
+					primaryCell = paintScrollbarThumb(
+						primaryCell,
+						primaryWidth,
+						row,
+						primaryHeight,
+						primaryRows.length,
+						primaryState.scrollOffset,
+						primaryScrollbar.visible && !collapsed,
+					);
+					const detailCell = paintScrollbarThumb(
+						detailVisible[row] ?? "",
+						detailWidth,
+						row,
+						detailHeight,
+						detailRows.length,
+						detailState.scrollOffset,
+						detailScrollbar.visible,
+					);
 					if (primaryWidth === 0) {
 						const border = chromeTheme.fg("dim", "│");
 						bodyLines.push(border + padRight(clipStyled(detailCell, detailWidth), detailWidth) + border);
@@ -864,27 +936,21 @@ export function paneOverlay<T = undefined, Row = unknown>(
 						if (focus === "primary") {
 							movePrimary(delta as PaneDirection, bodyHeight, legendLineCount);
 						} else {
-							markDetailManual();
-							detailState.scrollOffset = moveScrollOffset(
-								{ offset: detailState.scrollOffset, contentLength: detailRows.length, viewportHeight: Math.max(1, bodyHeight) },
-								delta as PaneDirection,
-							);
+							moveDetail(delta as PaneDirection, detailRows.length, bodyHeight);
 						}
 					},
 					home: () => {
 						if (focus === "primary") {
 							homePrimary(bodyHeight, legendLineCount);
 						} else {
-							markDetailManual();
-							detailState.scrollOffset = homeScrollOffset();
+							setDetailOffset(homeScrollOffset(), detailRows.length, bodyHeight);
 						}
 					},
 					end: () => {
 						if (focus === "primary") {
 							endPrimary(bodyHeight, legendLineCount);
 						} else {
-							markDetailManual();
-							detailState.scrollOffset = endScrollOffset(detailRows.length, Math.max(1, bodyHeight));
+							setDetailOffset(endScrollOffset(detailRows.length, Math.max(1, bodyHeight)), detailRows.length, bodyHeight);
 						}
 					},
 				});
@@ -897,12 +963,11 @@ export function paneOverlay<T = undefined, Row = unknown>(
 					if (focus === "primary") {
 						halfPagePrimary(-1, bodyHeight, legendLineCount);
 					} else {
-						markDetailManual();
-						detailState.scrollOffset = pageScrollOffset(
+						setDetailOffset(pageScrollOffset(
 							{ offset: detailState.scrollOffset, contentLength: detailRows.length, viewportHeight: Math.max(1, bodyHeight) },
 							-1,
 							pageSizeHalf(bodyHeight),
-						);
+						), detailRows.length, bodyHeight);
 					}
 					requestRender();
 					return;
@@ -911,12 +976,11 @@ export function paneOverlay<T = undefined, Row = unknown>(
 					if (focus === "primary") {
 						halfPagePrimary(1, bodyHeight, legendLineCount);
 					} else {
-						markDetailManual();
-						detailState.scrollOffset = pageScrollOffset(
+						setDetailOffset(pageScrollOffset(
 							{ offset: detailState.scrollOffset, contentLength: detailRows.length, viewportHeight: Math.max(1, bodyHeight) },
 							1,
 							pageSizeHalf(bodyHeight),
-						);
+						), detailRows.length, bodyHeight);
 					}
 					requestRender();
 					return;

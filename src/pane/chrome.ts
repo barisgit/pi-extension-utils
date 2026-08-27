@@ -1,12 +1,14 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 /**
- * Minimal theme shape for chrome helpers: only `fg(color, text)` is required.
- * Lets the same helpers work for both `@earendil-works/pi-coding-agent` Theme and
+ * Minimal theme shape for chrome helpers: only `fg(color, text)` is required;
+ * `bg` enables native-style scrollbar thumbs when the host exposes it. Lets the
+ * same helpers work for both `@earendil-works/pi-coding-agent` Theme and
  * any pi-tui-compatible theme.
  */
 export interface ChromeTheme {
 	fg(color: string, text: string): string;
+	bg?(color: string, text: string): string;
 	bold?(text: string): string;
 }
 

@@ -8,11 +8,15 @@ import {
 } from "../src/index.ts";
 
 const theme = {
-	fg(_color: string, text: string) {
-		return text;
+	fg(color: string, text: string) {
+		return color === "scrollbarThumb" ? `\x1b[38;5;8m${text}\x1b[39m` : text;
 	},
 	bold(text: string) {
 		return `*${text}*`;
+	},
+	bg(color: string, text: string) {
+		if (color !== "selectedBg") throw new Error(`Unknown theme background color: ${color}`);
+		return `\x1b[48;5;8m${text}\x1b[49m`;
 	},
 };
 
@@ -216,6 +220,69 @@ test("detail scroll: j/k/u/d/g/G scroll; perSelectionScroll keeps separate offse
 	assert.match(manual[1], /A:3/);
 });
 
+test("detail wheel reattaches follow-output when it reaches the end", () => {
+	let count = 8;
+	const { component, render } = mount(
+		baseOptions({
+			height: 4,
+			stickyBottom: true,
+			primary: { mode: "cursor", rows: ["a"], renderRow: (row) => String(row) },
+			detail: { rows: () => Array.from({ length: count }, (_, index) => `detail-${index}`) },
+		}),
+		60,
+	);
+	assert.match(render()[1], /detail-4/);
+
+	component.handleInput("\x1b[<64;50;2M"); // detach by moving one line up
+	assert.match(render()[1], /detail-3/);
+	component.handleInput("\x1b[<65;50;2M"); // return to the end
+	assert.match(render()[1], /detail-4/);
+
+	count = 9;
+	assert.match(render()[1], /detail-5/);
+});
+
+test("detail keyboard navigation reattaches follow-output at the end", () => {
+	let count = 8;
+	const { component, render } = mount(baseOptions({
+		height: 4,
+		stickyBottom: true,
+		primary: { mode: "cursor", rows: ["a"], renderRow: (row) => String(row) },
+		detail: { rows: () => Array.from({ length: count }, (_, index) => `detail-${index}`) },
+	}));
+	assert.match(render()[1], /detail-4/);
+
+	component.handleInput("\t");
+	component.handleInput("k");
+	assert.match(render()[1], /detail-3/);
+	component.handleInput("G");
+	assert.match(render()[1], /detail-4/);
+
+	count = 9;
+	assert.match(render()[1], /detail-5/);
+});
+
+test("detail scrollbar appears during activity and hides after Pi's delay", (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const { component, render } = mount(
+		baseOptions({
+			height: 4,
+			primary: { mode: "cursor", rows: ["a"], renderRow: (row) => String(row) },
+			detail: { rows: () => Array.from({ length: 10 }, (_, index) => `detail-${index}`) },
+		}),
+		60,
+	);
+	assert.doesNotMatch(render().join(""), /48;5;8/);
+
+	component.handleInput("\x1b[<65;50;2M");
+	const active = render();
+	assert.match(active.join(""), /48;5;8/);
+	for (const line of active) assert.equal(visibleWidth(line), 60);
+
+	t.mock.timers.tick(1_000);
+	assert.doesNotMatch(render().join(""), /48;5;8/);
+});
+
 test("custom action appears in legend and runs with selected row; banned keys consumed no-op", () => {
 	const runs: (string | undefined)[] = [];
 	const { component, render } = mount(baseOptions({
@@ -270,6 +337,25 @@ test("collapse key hides primary to collapsed width and forces detail focus", ()
 	assert.equal(scrolled, collapsed);
 });
 
+test("collapsed overlay keeps wheel routing in the visible detail pane", () => {
+	const { component, render } = mount(
+		baseOptions({
+			height: 4,
+			primary: { mode: "cursor", rows: ["a", "b"], renderRow: (row) => String(row) },
+			detail: { rows: (ctx) => Array.from({ length: 10 }, (_, index) => `${ctx.selectedRow}:${index}`) },
+			collapse: { key: "c", collapsedWidth: 1 },
+		}),
+		60,
+	);
+	render();
+	component.handleInput("c");
+	component.handleInput("\x1b[<65;50;1M");
+
+	const rendered = render().join("\n");
+	assert.match(rendered, /a:1/);
+	assert.doesNotMatch(rendered, /b:0/);
+});
+
 test("collapse label can be a function of the collapsed state (e.g. open vs hide hint)", () => {
 	const { component, render } = mount(
 		baseOptions({
@@ -293,7 +379,7 @@ test("collapse label can be a function of the collapsed state (e.g. open vs hide
 	assert.doesNotMatch(collapsed, /hide sidebar/);
 });
 
-test("mouse wheel scrolls the detail transcript by three lines", () => {
+test("mouse wheel scrolls the detail transcript by one line per report", () => {
 	const { component, render } = mount(
 		baseOptions({
 			height: 4,
@@ -307,11 +393,11 @@ test("mouse wheel scrolls the detail transcript by three lines", () => {
 	component.handleInput("\x1b[<65;50;2M");
 
 	const firstVisibleBodyRow = render()[1];
-	assert.match(firstVisibleBodyRow, /detail-3/);
-	assert.doesNotMatch(firstVisibleBodyRow, /detail-1/);
+	assert.match(firstVisibleBodyRow, /detail-1/);
+	assert.doesNotMatch(firstVisibleBodyRow, /detail-3/);
 });
 
-test("mouse wheel moves the primary selection by one row", () => {
+test("modified mouse wheel still moves the primary selection by one row", () => {
 	const { component, render } = mount(
 		baseOptions({
 			height: 4,
@@ -326,11 +412,84 @@ test("mouse wheel moves the primary selection by one row", () => {
 	);
 	render();
 
-	component.handleInput("\x1b[<65;10;2M");
+	component.handleInput("\x1b[<69;10;2M"); // Shift + wheel down
 
 	const rendered = render().join("\n");
 	assert.match(rendered, /detail-b/);
 	assert.doesNotMatch(rendered, /detail-d/);
+});
+
+test("unconsumed detail wheel movement chains to the primary pane", () => {
+	const { component, render } = mount(
+		baseOptions({
+			height: 4,
+			primary: { mode: "cursor", rows: ["a", "b"], renderRow: (row) => String(row) },
+			detail: { rows: (ctx) => [`${ctx.selectedRow}:0`] },
+		}),
+		60,
+	);
+	render();
+
+	component.handleInput("\x1b[<65;50;2M");
+
+	assert.match(render().join("\n"), /b:0/);
+});
+
+test("wheel outside a pane body falls back to the primary pane", () => {
+	const { component, render } = mount(
+		baseOptions({
+			height: 4,
+			primary: { mode: "cursor", rows: ["a", "b"], renderRow: (row) => String(row) },
+			detail: { rows: (ctx) => Array.from({ length: 10 }, (_, index) => `${ctx.selectedRow}:${index}`) },
+		}),
+		60,
+	);
+	render();
+
+	component.handleInput("\x1b[<65;50;1M"); // right-pane title row
+
+	const rendered = render().join("\n");
+	assert.match(rendered, /b:0/);
+	assert.doesNotMatch(rendered, /a:1/);
+});
+
+test("primary scrollbar appears during wheel navigation", () => {
+	const { component, render } = mount(
+		baseOptions({
+			height: 4,
+			primary: {
+				mode: "cursor",
+				rows: Array.from({ length: 10 }, (_, index) => `item-${index}`),
+				renderRow: (row) => String(row),
+			},
+			detail: { rows: () => ["detail"] },
+		}),
+		60,
+	);
+	assert.doesNotMatch(render().join(""), /48;5;8/);
+
+	component.handleInput("\x1b[<65;10;2M");
+
+	assert.match(render().join(""), /48;5;8/);
+});
+
+test("mouse coordinates are normalized before divider hit-testing", () => {
+	const { component, render } = mount(
+		baseOptions({
+			height: 4,
+			primary: { mode: "cursor", rows: ["a", "b"], renderRow: (row) => String(row) },
+			detail: { rows: (ctx) => Array.from({ length: 10 }, (_, index) => `${ctx.selectedRow}:${index}`) },
+		}),
+		60,
+	);
+	render();
+
+	// Terminal column 32 is the divider: SGR coordinates are 1-based, overlay coordinates are 0-based.
+	component.handleInput("\x1b[<65;32;2M");
+
+	const rendered = render().join("\n");
+	assert.match(rendered, /b:0/);
+	assert.doesNotMatch(rendered, /a:1/);
 });
 
 test("primary legend placement consumes primary viewport but not detail viewport", () => {
