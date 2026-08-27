@@ -551,7 +551,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 				if (event.y > maxRow) return;
 				const direction = event.button === 64 ? -1 : 1;
 				if (inPrimaryColumn || (primaryWidth > 0 && event.x <= primaryWidth + 1)) {
-					const lines = direction * (event.shift ? 5 : 3);
+					const lines = direction * (event.shift ? 5 : 1);
 					focus = "primary";
 					applyPrimaryNav(bodyHeight, legendLineCount, (state, rows, viewportHeight) => {
 						if ((options.primary.mode ?? "scroll") === "cursor") {

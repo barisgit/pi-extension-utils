@@ -311,6 +311,28 @@ test("mouse wheel scrolls the detail pane by one line", () => {
 	assert.doesNotMatch(firstVisibleBodyRow, /detail-3/);
 });
 
+test("mouse wheel moves the primary selection by one row", () => {
+	const { component, render } = mount(
+		baseOptions({
+			height: 4,
+			primary: {
+				mode: "cursor",
+				rows: ["a", "b", "c", "d"],
+				renderRow: (row) => String(row),
+			},
+			detail: { rows: (ctx) => [`detail-${ctx.selectedRow}`] },
+		}),
+		60,
+	);
+	render();
+
+	component.handleInput("\x1b[<65;10;2M");
+
+	const rendered = render().join("\n");
+	assert.match(rendered, /detail-b/);
+	assert.doesNotMatch(rendered, /detail-d/);
+});
+
 test("primary legend placement consumes primary viewport but not detail viewport", () => {
 	const { render } = mount(baseOptions({
 		height: 10,
