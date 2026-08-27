@@ -293,6 +293,24 @@ test("collapse label can be a function of the collapsed state (e.g. open vs hide
 	assert.doesNotMatch(collapsed, /hide sidebar/);
 });
 
+test("mouse wheel scrolls the detail pane by one line", () => {
+	const { component, render } = mount(
+		baseOptions({
+			height: 4,
+			primary: { mode: "cursor", rows: ["a"], renderRow: (row) => String(row) },
+			detail: { rows: () => Array.from({ length: 10 }, (_, index) => `detail-${index}`) },
+		}),
+		60,
+	);
+	render();
+
+	component.handleInput("\x1b[<65;50;2M");
+
+	const firstVisibleBodyRow = render()[1];
+	assert.match(firstVisibleBodyRow, /detail-1/);
+	assert.doesNotMatch(firstVisibleBodyRow, /detail-3/);
+});
+
 test("primary legend placement consumes primary viewport but not detail viewport", () => {
 	const { render } = mount(baseOptions({
 		height: 10,

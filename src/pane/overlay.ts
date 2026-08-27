@@ -549,8 +549,9 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			// Wheel: scroll the pane under the pointer (shift accelerates).
 			if (event.button === 64 || event.button === 65) {
 				if (event.y > maxRow) return;
-				const lines = (event.button === 64 ? -1 : 1) * (event.shift ? 5 : 3);
+				const direction = event.button === 64 ? -1 : 1;
 				if (inPrimaryColumn || (primaryWidth > 0 && event.x <= primaryWidth + 1)) {
+					const lines = direction * (event.shift ? 5 : 3);
 					focus = "primary";
 					applyPrimaryNav(bodyHeight, legendLineCount, (state, rows, viewportHeight) => {
 						if ((options.primary.mode ?? "scroll") === "cursor") {
@@ -567,6 +568,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 						}
 					});
 				} else {
+					const lines = direction * (event.shift ? 5 : 1);
 					focus = "detail";
 					markDetailManual();
 					detailState.scrollOffset = moveScrollOffset(

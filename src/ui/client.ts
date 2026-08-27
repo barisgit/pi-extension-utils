@@ -15,6 +15,7 @@ export interface FullscreenController {
 export interface TuiModeCapture {
 	noteTui(tui: unknown): void;
 	isFullscreenTui(): boolean;
+	isRegularTui(): boolean;
 }
 
 export function createTuiModeCapture(): TuiModeCapture {
@@ -26,6 +27,9 @@ export function createTuiModeCapture(): TuiModeCapture {
 		},
 		isFullscreenTui(): boolean {
 			return mode === "fullscreen";
+		},
+		isRegularTui(): boolean {
+			return mode === "regular";
 		},
 	};
 }
@@ -82,12 +86,16 @@ export function createUiClient(
 			// clips it while the transcript tail renders above it. Mount it as a
 			// full-screen overlay instead so the component owns the whole screen,
 			// matching the regular-TUI behavior it was designed for.
-			const options: CustomUiOptions | undefined = capture.isFullscreenTui()
-				? {
+			// Before any wrapped factory has rendered, the mode is unknown. Default
+			// that cold-start case to an overlay: it is the only mount that remains
+			// fullscreen and receives focus in the alt-screen TUI. Preserve the
+			// legacy editor-slot mount only when regular mode was positively seen.
+			const options: CustomUiOptions | undefined = capture.isRegularTui()
+				? undefined
+				: {
 						overlay: true,
 						overlayOptions: { anchor: "top-left", width: "100%", maxHeight: "100%" },
-					}
-				: undefined;
+					};
 			return await ui.custom(wrapped, options);
 			} finally {
 				lease.release();

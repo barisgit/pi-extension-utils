@@ -16,7 +16,7 @@ Shared utility library for Pi extensions: widget coordination (host + client), f
 ## Architecture invariants
 
 - `connect()` (src/client/index.ts) builds one `TuiModeCapture` shared by the widget coordinator and the ui client. Both must receive the same instance: widget factory invocations populate the TUI mode, and `ui.fullscreen()` reads it to decide how to mount.
-- `ui.fullscreen()` in fullscreen TUI mode mounts via `ctx.ui.custom(factory, { overlay: true, overlayOptions: { anchor: "top-left", width: "100%", maxHeight: "100%" } })`; in regular TUI mode (or before the mode is known) it keeps the legacy editor-slot mount. Do not remove the cold-start legacy path — the mode is only known after pi first invokes a wrapped factory.
+- `ui.fullscreen()` mounts via `ctx.ui.custom(factory, { overlay: true, overlayOptions: { anchor: "top-left", width: "100%", maxHeight: "100%" } })` in fullscreen mode and before the TUI mode is known. The cold-start default must be overlay: mode capture happens only after Pi invokes a wrapped factory, so defaulting unknown to the editor slot breaks the first fullscreen open. Only a positively captured regular TUI keeps the legacy editor-slot mount.
 - Widget factories are wrapped by `withTuiCapture` when a capture is provided. Fallback registration must pass `record.factory` (the wrapped one), never the raw `factory` argument — the wrap is the point.
 - Widget host/client coordinate over an event protocol with `PROTOCOL_VERSION`; the host ignores unknown fields and rejects newer protocol versions. Bump the version when event payloads change shape.
 - All pi-facing types are structural on purpose: this package must not take a hard dependency on pi-tui/pi-coding-agent types in client-facing signatures.

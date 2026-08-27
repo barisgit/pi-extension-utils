@@ -330,6 +330,43 @@ test("ui.fullscreen acquires a lease around ctx.ui.custom and restores after", a
 	assert.deepEqual(renderHost(hostCtx), ["w"]);
 });
 
+test("ui.fullscreen mounts as an overlay before any TUI mode has been captured", async () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	let customOptions;
+	ctx.ui.custom = async (_factory, options) => {
+		customOptions = options;
+		return "result";
+	};
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-first-open" });
+
+	await client.ui.fullscreen(() => ({ render: () => [] }));
+
+	assert.deepEqual(customOptions, {
+		overlay: true,
+		overlayOptions: { anchor: "top-left", width: "100%", maxHeight: "100%" },
+	});
+});
+
+test("ui.fullscreen preserves the editor-slot mount after regular TUI mode is captured", async () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	let customOptions = "not-called";
+	ctx.ui.custom = async (_factory, options) => {
+		customOptions = options;
+		return "result";
+	};
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-regular" });
+	client.widgets.set("belowEditor", "capture", textFactory("capture"));
+	const widget = [...ctx.widgets.values()][0];
+	assert.ok(widget);
+	widget.factory({ mode: "regular" }, {}).render(80);
+
+	await client.ui.fullscreen(() => ({ render: () => [] }));
+
+	assert.equal(customOptions, undefined);
+});
+
 test("ui.fullscreen releases the lease when the custom UI throws", async () => {
 	const bus = createBus();
 	const hostCtx = createCtx();
