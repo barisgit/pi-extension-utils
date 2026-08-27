@@ -293,7 +293,7 @@ test("collapse label can be a function of the collapsed state (e.g. open vs hide
 	assert.doesNotMatch(collapsed, /hide sidebar/);
 });
 
-test("mouse wheel scrolls the detail pane by one line", () => {
+test("mouse wheel scrolls the detail transcript by three lines", () => {
 	const { component, render } = mount(
 		baseOptions({
 			height: 4,
@@ -307,8 +307,8 @@ test("mouse wheel scrolls the detail pane by one line", () => {
 	component.handleInput("\x1b[<65;50;2M");
 
 	const firstVisibleBodyRow = render()[1];
-	assert.match(firstVisibleBodyRow, /detail-1/);
-	assert.doesNotMatch(firstVisibleBodyRow, /detail-3/);
+	assert.match(firstVisibleBodyRow, /detail-3/);
+	assert.doesNotMatch(firstVisibleBodyRow, /detail-1/);
 });
 
 test("mouse wheel moves the primary selection by one row", () => {

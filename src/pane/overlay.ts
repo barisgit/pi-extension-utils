@@ -568,7 +568,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 						}
 					});
 				} else {
-					const lines = direction * (event.shift ? 5 : 1);
+					const lines = direction * (event.shift ? 5 : 3);
 					focus = "detail";
 					markDetailManual();
 					detailState.scrollOffset = moveScrollOffset(
