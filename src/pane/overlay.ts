@@ -625,10 +625,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 					movePrimary(direction, bodyHeight, legendLineCount);
 				} else {
 					focus = "detail";
-					const remaining = moveDetail(direction, detailRows.length, bodyHeight);
-					if (remaining !== 0) {
-						movePrimary(remaining as PaneDirection, bodyHeight, legendLineCount);
-					}
+					moveDetail(direction, detailRows.length, bodyHeight);
 				}
 				requestRender();
 				return;

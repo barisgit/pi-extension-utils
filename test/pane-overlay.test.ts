@@ -419,7 +419,7 @@ test("modified mouse wheel still moves the primary selection by one row", () => 
 	assert.doesNotMatch(rendered, /detail-d/);
 });
 
-test("unconsumed detail wheel movement chains to the primary pane", () => {
+test("detail wheel movement stays contained at its boundary", () => {
 	const { component, render } = mount(
 		baseOptions({
 			height: 4,
@@ -432,7 +432,7 @@ test("unconsumed detail wheel movement chains to the primary pane", () => {
 
 	component.handleInput("\x1b[<65;50;2M");
 
-	assert.match(render().join("\n"), /b:0/);
+	assert.match(render().join("\n"), /a:0/);
 });
 
 test("wheel outside a pane body falls back to the primary pane", () => {
