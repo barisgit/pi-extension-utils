@@ -59,6 +59,19 @@ test("titled segments and flat rule match expected chrome output", () => {
 	assert.equal(flatRule(theme, "", 4), "────");
 });
 
+test("pre-rendered title labels preserve ANSI styling and exact width", () => {
+	const rendered = titledTopSegment(theme, {
+		width: 20,
+		label: "Parent › Leaf",
+		labelPlain: "Parent › Leaf",
+		labelRendered: `${red("Parent")} › ${red("Leaf")}`,
+	});
+
+	assert.match(rendered, /\u001b\[31mParent/);
+	assert.match(rendered, /\u001b\[31mLeaf/);
+	assert.equal(visibleWidth(rendered), 20);
+});
+
 test("titled segments tolerate non-string label/tail without crashing", () => {
 	// A non-string label/tail used to reach truncateToWidth -> text.slice and
 	// hard-crash the host ("text.slice is not a function"). It must be coerced.

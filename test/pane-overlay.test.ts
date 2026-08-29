@@ -337,6 +337,36 @@ test("collapse key hides primary to collapsed width and forces detail focus", ()
 	assert.equal(scrolled, collapsed);
 });
 
+test("collapsed horizontal navigation changes primary selection while detail stays focused", () => {
+	const { component, render } = mount(baseOptions({
+		primary: {
+			mode: "cursor",
+			rows: ["a", { kind: "separator", label: "group" }, "b"],
+			renderRow: (row) => String(row),
+			title: (ctx) => ctx.primaryFocus ? "PRIMARY*" : "PRIMARY",
+		},
+		detail: {
+			rows: (ctx) => [`detail:${ctx.selectedRow}`],
+			title: (ctx) => ctx.detailFocus ? "DETAIL*" : "DETAIL",
+		},
+		collapse: { key: "c", collapsedWidth: 0, horizontalPrimaryNavigation: true },
+	}), 60);
+
+	component.handleInput("c");
+	component.handleInput("\u001b[C");
+	let collapsed = render().join("\n");
+	assert.match(collapsed, /detail:b/);
+	assert.match(collapsed, /DETAIL\*/);
+	assert.doesNotMatch(collapsed, /PRIMARY/);
+
+	component.handleInput("\u001b[C");
+	assert.match(render().join("\n"), /detail:b/);
+	component.handleInput("\u001b[D");
+	collapsed = render().join("\n");
+	assert.match(collapsed, /detail:a/);
+	assert.match(collapsed, /DETAIL\*/);
+});
+
 test("collapsed overlay keeps wheel routing in the visible detail pane", () => {
 	const { component, render } = mount(
 		baseOptions({

@@ -49,6 +49,8 @@ export type PaneOverlayPrimaryRow<Row = unknown> = Row | PaneOverlaySeparatorRow
 
 export interface PaneOverlayTitle {
 	label: string;
+	labelRendered?: string;
+	labelPlain?: string;
 	tail?: string;
 	tailRendered?: string;
 	tailPlain?: string;
@@ -101,6 +103,8 @@ export interface PaneOverlaySplitOptions {
 export interface PaneCollapseOptions {
 	key?: string;
 	collapsedWidth?: number;
+	/** Use Left/Right to move the primary cursor while the collapsed detail pane stays focused. */
+	horizontalPrimaryNavigation?: boolean;
 	/**
 	 * Legend/divider label for the collapse toggle. A function receives the
 	 * current collapsed state so the hint can read e.g. "hide sidebar" when open
@@ -191,6 +195,8 @@ function titleOptions<Row>(
 	if (typeof title === "object" && title !== null) {
 		return {
 			label: title.label,
+			labelRendered: title.labelRendered,
+			labelPlain: title.labelPlain,
 			tail: title.tail,
 			tailRendered: title.tailRendered,
 			tailPlain: title.tailPlain,
@@ -911,6 +917,12 @@ export function paneOverlay<T = undefined, Row = unknown>(
 				}
 
 				if (matchesAny(data, bannedKeys)) {
+					requestRender();
+					return;
+				}
+
+				if (collapsed && collapse?.horizontalPrimaryNavigation && matchesAny(data, ["left", "right"])) {
+					movePrimary(matchesAny(data, ["right"]) ? 1 : -1, bodyHeight, 0);
 					requestRender();
 					return;
 				}

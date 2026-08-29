@@ -105,6 +105,10 @@ export function renderFooter(text: string, width: number, theme: ChromeTheme): s
 export interface TitledTopSegmentOptions {
 	width: number;
 	label: string;
+	/** Pre-rendered label string when caller already applied ANSI; pair with `labelPlain` for length. */
+	labelRendered?: string;
+	/** Plain visible-width companion for `labelRendered` so truncation and dash math stay correct. */
+	labelPlain?: string;
 	/** Plain-text tail; styled via `tailColor` (default "dim"). */
 	tail?: string;
 	/** Pre-rendered tail string when caller already applied ANSI; pair with `tailPlain` for length. */
@@ -135,12 +139,13 @@ export function titledTopSegment(theme: ChromeTheme, opts: TitledTopSegmentOptio
 		const tailLen = visibleWidth(tailPlain);
 		const canShowTail = tailLen > 0 && width - tailLen >= 14;
 		const labelBudget = Math.max(0, width - (canShowTail ? tailLen + 6 : 4));
-		const labelText = clipText(normalizeRenderableText(opts.label ?? ""), labelBudget);
+		const labelText = clipText(normalizeRenderableText(opts.labelPlain ?? opts.label ?? ""), labelBudget);
 		const labelLen = visibleWidth(labelText);
 		if (labelLen === 0) return dash(width);
-		const labelStyled = opts.labelBold && theme.bold
-			? theme.bold(theme.fg(labelColor, labelText))
+		const renderedLabel = opts.labelRendered !== undefined
+			? clipStyled(opts.labelRendered, labelLen)
 			: theme.fg(labelColor, labelText);
+		const labelStyled = opts.labelBold && theme.bold ? theme.bold(renderedLabel) : renderedLabel;
 		if (canShowTail) {
 			const fillDashes = Math.max(1, width - labelLen - tailLen - 6);
 			return clipStyled(`${dash(1)} ${labelStyled} ${dash(fillDashes)} ${tailRendered} ${dash(1)}`, width);
@@ -163,12 +168,13 @@ export function titledTopSegment(theme: ChromeTheme, opts: TitledTopSegmentOptio
 	const labelBudget = tailFits ? Math.max(0, width - tailLen - 7) : Math.max(0, width - 3);
 	// Defensive: callers occasionally pass undefined labels for transient/legacy
 	// runs that lack agent+mode+label; treat as empty rather than crashing pi.
-	const rawLabel = normalizeRenderableText(opts.label ?? "");
+	const rawLabel = normalizeRenderableText(opts.labelPlain ?? opts.label ?? "");
 	const labelText = truncateToWidth(rawLabel, labelBudget, "").replace(/\u001b\[[0-9;]*m/g, "");
-	const labelStyled = opts.labelBold && theme.bold
-		? theme.bold(theme.fg(labelColor, labelText))
-		: theme.fg(labelColor, labelText);
 	const labelLen = visibleWidth(labelText);
+	const renderedLabel = opts.labelRendered !== undefined
+		? clipStyled(opts.labelRendered, labelLen)
+		: theme.fg(labelColor, labelText);
+	const labelStyled = opts.labelBold && theme.bold ? theme.bold(renderedLabel) : renderedLabel;
 	// Layout with tail: `─ <label> ──…── <tail> ─`.
 	// Layout without tail: `─ <label> ──…────`.
 	if (tailFits) {
