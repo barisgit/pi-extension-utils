@@ -63,7 +63,7 @@ await client.ui.fullscreen(
 | `legendPlacement` | `footer` or `primary` |
 | `customActions` | Extra keys with labels and handlers |
 | `closeKeys` | Override close keys, e.g. omit `q` |
-| `collapse` | Optional primary/sidebar collapse key |
+| `collapse` | Optional primary/sidebar collapse key; collapsed horizontal navigation can provide its own footer label |
 | `perSelectionScroll` | Keep separate detail scroll per selected key |
 | `stickyBottom` | Detail starts/follows at bottom until user scrolls |
 | `onRender` | Per-frame hook for external transient UI state |

@@ -349,7 +349,12 @@ test("collapsed horizontal navigation changes primary selection while detail sta
 			rows: (ctx) => [`detail:${ctx.selectedRow}`],
 			title: (ctx) => ctx.detailFocus ? "DETAIL*" : "DETAIL",
 		},
-		collapse: { key: "c", collapsedWidth: 0, horizontalPrimaryNavigation: true },
+		collapse: {
+			key: "c",
+			collapsedWidth: 0,
+			horizontalPrimaryNavigation: true,
+			horizontalPrimaryNavigationLabel: "items",
+		},
 	}), 60);
 
 	component.handleInput("c");
@@ -358,6 +363,7 @@ test("collapsed horizontal navigation changes primary selection while detail sta
 	assert.match(collapsed, /detail:b/);
 	assert.match(collapsed, /DETAIL\*/);
 	assert.doesNotMatch(collapsed, /PRIMARY/);
+	assert.match(collapsed, /←\/→ items/);
 
 	component.handleInput("\u001b[C");
 	assert.match(render().join("\n"), /detail:b/);

@@ -105,6 +105,8 @@ export interface PaneCollapseOptions {
 	collapsedWidth?: number;
 	/** Use Left/Right to move the primary cursor while the collapsed detail pane stays focused. */
 	horizontalPrimaryNavigation?: boolean;
+	/** Collapsed-footer label for Left/Right navigation (default: "navigate"). */
+	horizontalPrimaryNavigationLabel?: string;
 	/**
 	 * Legend/divider label for the collapse toggle. A function receives the
 	 * current collapsed state so the hint can read e.g. "hide sidebar" when open
@@ -826,9 +828,15 @@ export function paneOverlay<T = undefined, Row = unknown>(
 				// When the primary pane is collapsed its legend (and the collapse hint with
 				// it) disappears, so the user can't see how to reopen it. Surface the
 				// reopen hint in the always-visible detail footer instead.
+				const horizontalNavigationHint =
+					collapsed && collapse?.horizontalPrimaryNavigation
+						? `←/→ ${collapse.horizontalPrimaryNavigationLabel ?? "navigate"}`
+						: "";
 				const detailFooterText =
 					collapsed && collapse
-						? [`${collapseKey} ${collapseLabel("expand")}`, detailFooterBase].filter(Boolean).join(" \u00b7 ")
+						? [horizontalNavigationHint, `${collapseKey} ${collapseLabel("expand")}`, detailFooterBase]
+								.filter(Boolean)
+								.join(" \u00b7 ")
 						: detailFooterBase;
 
 				const bottomPrimary = titledBottomSegment(chromeTheme, primaryWidth, primaryFooterText, focus === "primary");
