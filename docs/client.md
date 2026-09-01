@@ -45,7 +45,7 @@ await client.ui.fullscreen((tui, theme, keybindings, done) => new MyComponent(tu
 - acquires a fullscreen lease
 - blanks coordinated widgets
 - preserves the regular-TUI editor-slot mount
-- temporarily replaces a capable fullscreen viewport TUI's layout root with the dashboard and forces redraws on install and restoration
+- temporarily replaces a capable fullscreen viewport TUI's layout root with the dashboard; restoration invalidates the prior root when supported, reinstalls that exact root, then forces a redraw
 - uses the overlay path as the safe cold-start/fallback mount without rendering the real dashboard twice
 - releases the lease in `finally`
 

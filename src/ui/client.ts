@@ -144,6 +144,7 @@ export function createUiClient(
 						restoreLayoutRoot = () => {
 							if (restored) return;
 							restored = true;
+							(priorRoot as { invalidate?(): void } | null | undefined)?.invalidate?.();
 							layoutTui.setLayoutRoot(priorRoot);
 							layoutTui.requestRender?.(true);
 						};

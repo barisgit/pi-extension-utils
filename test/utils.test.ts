@@ -422,16 +422,23 @@ test("ui.fullscreen temporarily replaces the fullscreen layout root without over
 test("ui.fullscreen restores the fullscreen layout root before forwarding done", async () => {
 	const bus = createBus();
 	const ctx = createCtx();
-	const priorRoot = { render: () => ["transcript"] };
-	const roots = [];
+	const events = [];
+	const priorRoot = {
+		render: () => ["transcript"],
+		invalidate() {
+			events.push(["invalidate", priorRoot]);
+		},
+	};
 	const tui = {
 		mode: "fullscreen",
 		layoutRoot: priorRoot,
 		setLayoutRoot(root) {
 			this.layoutRoot = root;
-			roots.push(root);
+			events.push(["root", root]);
 		},
-		requestRender() {},
+		requestRender(force) {
+			events.push(["redraw", force]);
+		},
 	};
 	const dashboard = { render: () => ["dashboard"] };
 	let finish;
@@ -451,22 +458,35 @@ test("ui.fullscreen restores the fullscreen layout root before forwarding done",
 		return dashboard;
 	}), "result");
 	assert.equal(rootWhenDone, priorRoot);
-	assert.deepEqual(roots, [dashboard, priorRoot]);
+	assert.deepEqual(events, [
+		["root", dashboard],
+		["redraw", true],
+		["invalidate", priorRoot],
+		["root", priorRoot],
+		["redraw", true],
+	]);
 });
 
 test("ui.fullscreen restores the exact fullscreen layout root when the host custom UI rejects", async () => {
 	const bus = createBus();
 	const ctx = createCtx();
-	const priorRoot = { render: () => ["transcript"] };
-	const roots = [];
+	const events = [];
+	const priorRoot = {
+		render: () => ["transcript"],
+		invalidate() {
+			events.push(["invalidate", priorRoot]);
+		},
+	};
 	const tui = {
 		mode: "fullscreen",
 		layoutRoot: priorRoot,
 		setLayoutRoot(root) {
 			this.layoutRoot = root;
-			roots.push(root);
+			events.push(["root", root]);
 		},
-		requestRender() {},
+		requestRender(force) {
+			events.push(["redraw", force]);
+		},
 	};
 	const dashboard = { render: () => ["dashboard"] };
 	ctx.ui.custom = async (factory) => {
@@ -477,7 +497,13 @@ test("ui.fullscreen restores the exact fullscreen layout root when the host cust
 
 	await assert.rejects(() => client.ui.fullscreen(() => dashboard), /custom failed/);
 	assert.equal(tui.layoutRoot, priorRoot);
-	assert.deepEqual(roots, [dashboard, priorRoot]);
+	assert.deepEqual(events, [
+		["root", dashboard],
+		["redraw", true],
+		["invalidate", priorRoot],
+		["root", priorRoot],
+		["redraw", true],
+	]);
 });
 
 test("ui.fullscreen swaps in a dashboard returned by an async factory", async () => {
@@ -544,13 +570,19 @@ test("ui.fullscreen keeps the overlay fallback when the prior layout root cannot
 	const bus = createBus();
 	const ctx = createCtx();
 	let rootSet = false;
+	let invalidations = 0;
 	const tui = {
 		mode: "fullscreen",
 		setLayoutRoot() {
 			rootSet = true;
 		},
 	};
-	const dashboard = { render: () => ["dashboard"] };
+	const dashboard = {
+		render: () => ["dashboard"],
+		invalidate() {
+			invalidations++;
+		},
+	};
 	ctx.ui.custom = async (factory) => {
 		const mounted = factory(tui, {}, {}, () => {});
 		assert.equal(mounted, dashboard);
@@ -560,14 +592,32 @@ test("ui.fullscreen keeps the overlay fallback when the prior layout root cannot
 
 	assert.equal(await client.ui.fullscreen(() => dashboard), "result");
 	assert.equal(rootSet, false);
+	assert.equal(invalidations, 0);
 });
 
 test("ui.fullscreen preserves the editor-slot mount after regular TUI mode is captured", async () => {
 	const bus = createBus();
 	const ctx = createCtx();
 	let customOptions = "not-called";
-	ctx.ui.custom = async (_factory, options) => {
+	let invalidations = 0;
+	let rootSet = false;
+	const priorRoot = {
+		render: () => ["transcript"],
+		invalidate() {
+			invalidations++;
+		},
+	};
+	const tui = {
+		mode: "regular",
+		layoutRoot: priorRoot,
+		setLayoutRoot() {
+			rootSet = true;
+		},
+	};
+	const dashboard = { render: () => ["dashboard"] };
+	ctx.ui.custom = async (factory, options) => {
 		customOptions = options;
+		assert.equal(factory(tui, {}, {}, () => {}), dashboard);
 		return "result";
 	};
 	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-regular" });
@@ -576,9 +626,11 @@ test("ui.fullscreen preserves the editor-slot mount after regular TUI mode is ca
 	assert.ok(widget);
 	widget.factory({ mode: "regular" }, {}).render(80);
 
-	await client.ui.fullscreen(() => ({ render: () => [] }));
+	await client.ui.fullscreen(() => dashboard);
 
 	assert.equal(customOptions, undefined);
+	assert.equal(rootSet, false);
+	assert.equal(invalidations, 0);
 });
 
 test("ui.fullscreen releases the lease when the custom UI throws", async () => {
