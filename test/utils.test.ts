@@ -348,6 +348,220 @@ test("ui.fullscreen mounts as an overlay before any TUI mode has been captured",
 	});
 });
 
+test("ui.fullscreen temporarily replaces the fullscreen layout root without overlaying the dashboard", async () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	const priorRoot = { render: () => ["transcript image"] };
+	const events = [];
+	const tui = {
+		mode: "fullscreen",
+		layoutRoot: priorRoot,
+		setLayoutRoot(root) {
+			this.layoutRoot = root;
+			events.push(["root", root]);
+		},
+		requestRender(force) {
+			events.push(["redraw", force]);
+		},
+	};
+	let dashboardRenders = 0;
+	const dashboardInputs = [];
+	let dashboardInvalidations = 0;
+	let dashboardDisposals = 0;
+	const dashboard = {
+		focused: false,
+		wantsKeyRelease: false,
+		render() {
+			dashboardRenders++;
+			return ["dashboard"];
+		},
+		handleInput(data) {
+			dashboardInputs.push(data);
+		},
+		invalidate() {
+			dashboardInvalidations++;
+		},
+		dispose() {
+			dashboardDisposals++;
+		},
+	};
+	ctx.ui.custom = async (factory, options) => {
+		assert.equal(options.overlay, true);
+		const mounted = factory(tui, {}, {}, () => {});
+		assert.equal(tui.layoutRoot, dashboard);
+		assert.deepEqual(tui.layoutRoot.render(80), ["dashboard"]);
+		assert.deepEqual(mounted.render(80), []);
+		mounted.handleInput("down");
+		mounted.invalidate();
+		mounted.focused = true;
+		assert.equal(dashboard.focused, true);
+		dashboard.focused = false;
+		assert.equal(mounted.focused, false);
+		assert.equal(mounted.wantsKeyRelease, false);
+		dashboard.wantsKeyRelease = true;
+		assert.equal(mounted.wantsKeyRelease, true);
+		mounted.dispose();
+		assert.equal(dashboardRenders, 1);
+		return "result";
+	};
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-layout-root" });
+
+	assert.equal(await client.ui.fullscreen(() => dashboard), "result");
+	assert.equal(tui.layoutRoot, priorRoot);
+	assert.deepEqual(events, [
+		["root", dashboard],
+		["redraw", true],
+		["root", priorRoot],
+		["redraw", true],
+	]);
+	assert.deepEqual(dashboardInputs, ["down"]);
+	assert.equal(dashboardInvalidations, 1);
+	assert.equal(dashboardDisposals, 1);
+});
+
+test("ui.fullscreen restores the fullscreen layout root before forwarding done", async () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	const priorRoot = { render: () => ["transcript"] };
+	const roots = [];
+	const tui = {
+		mode: "fullscreen",
+		layoutRoot: priorRoot,
+		setLayoutRoot(root) {
+			this.layoutRoot = root;
+			roots.push(root);
+		},
+		requestRender() {},
+	};
+	const dashboard = { render: () => ["dashboard"] };
+	let finish;
+	let rootWhenDone;
+	ctx.ui.custom = (factory) => new Promise((resolve) => {
+		factory(tui, {}, {}, (result) => {
+			rootWhenDone = tui.layoutRoot;
+			resolve(result);
+		});
+		assert.equal(tui.layoutRoot, dashboard);
+		finish();
+	});
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-restore-before-done" });
+
+	assert.equal(await client.ui.fullscreen((_tui, _theme, _keybindings, done) => {
+		finish = () => done("result");
+		return dashboard;
+	}), "result");
+	assert.equal(rootWhenDone, priorRoot);
+	assert.deepEqual(roots, [dashboard, priorRoot]);
+});
+
+test("ui.fullscreen restores the exact fullscreen layout root when the host custom UI rejects", async () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	const priorRoot = { render: () => ["transcript"] };
+	const roots = [];
+	const tui = {
+		mode: "fullscreen",
+		layoutRoot: priorRoot,
+		setLayoutRoot(root) {
+			this.layoutRoot = root;
+			roots.push(root);
+		},
+		requestRender() {},
+	};
+	const dashboard = { render: () => ["dashboard"] };
+	ctx.ui.custom = async (factory) => {
+		factory(tui, {}, {}, () => {});
+		throw new Error("custom failed");
+	};
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-layout-root-error" });
+
+	await assert.rejects(() => client.ui.fullscreen(() => dashboard), /custom failed/);
+	assert.equal(tui.layoutRoot, priorRoot);
+	assert.deepEqual(roots, [dashboard, priorRoot]);
+});
+
+test("ui.fullscreen swaps in a dashboard returned by an async factory", async () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	const priorRoot = { render: () => ["transcript"] };
+	const tui = {
+		mode: "fullscreen",
+		layoutRoot: priorRoot,
+		setLayoutRoot(root) {
+			this.layoutRoot = root;
+		},
+		requestRender() {},
+	};
+	const dashboard = { render: () => ["dashboard"] };
+	ctx.ui.custom = async (factory) => {
+		const mounted = await factory(tui, {}, {}, () => {});
+		assert.equal(tui.layoutRoot, dashboard);
+		assert.deepEqual(mounted.render(80), []);
+		return "result";
+	};
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-async-layout-root" });
+
+	assert.equal(await client.ui.fullscreen(async () => dashboard), "result");
+	assert.equal(tui.layoutRoot, priorRoot);
+});
+
+test("ui.fullscreen does not mount an async dashboard after done closes the custom UI", async () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	const priorRoot = { render: () => ["transcript"] };
+	const tui = {
+		mode: "fullscreen",
+		layoutRoot: priorRoot,
+		setLayoutRoot(root) {
+			this.layoutRoot = root;
+		},
+		requestRender() {},
+	};
+	const dashboard = { render: () => ["dashboard"] };
+	let settleFactory;
+	let factorySettled;
+	ctx.ui.custom = (factory) => new Promise((resolve) => {
+		factorySettled = factory(tui, {}, {}, resolve);
+	});
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-async-done-first" });
+
+	const result = client.ui.fullscreen(async (_tui, _theme, _keybindings, done) => {
+		done("result");
+		await new Promise((resolve) => {
+			settleFactory = resolve;
+		});
+		return dashboard;
+	});
+
+	assert.equal(await result, "result");
+	assert.equal(tui.layoutRoot, priorRoot);
+	settleFactory();
+	await factorySettled;
+	assert.equal(tui.layoutRoot, priorRoot);
+});
+
+test("ui.fullscreen keeps the overlay fallback when the prior layout root cannot be captured", async () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	let rootSet = false;
+	const tui = {
+		mode: "fullscreen",
+		setLayoutRoot() {
+			rootSet = true;
+		},
+	};
+	const dashboard = { render: () => ["dashboard"] };
+	ctx.ui.custom = async (factory) => {
+		const mounted = factory(tui, {}, {}, () => {});
+		assert.equal(mounted, dashboard);
+		return "result";
+	};
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-ui-no-readable-root" });
+
+	assert.equal(await client.ui.fullscreen(() => dashboard), "result");
+	assert.equal(rootSet, false);
+});
+
 test("ui.fullscreen preserves the editor-slot mount after regular TUI mode is captured", async () => {
 	const bus = createBus();
 	const ctx = createCtx();

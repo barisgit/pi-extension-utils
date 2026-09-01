@@ -44,8 +44,12 @@ await client.ui.fullscreen((tui, theme, keybindings, done) => new MyComponent(tu
 
 - acquires a fullscreen lease
 - blanks coordinated widgets
-- calls `ctx.ui.custom()`
+- preserves the regular-TUI editor-slot mount
+- temporarily replaces a capable fullscreen viewport TUI's layout root with the dashboard and forces redraws on install and restoration
+- uses the overlay path as the safe cold-start/fallback mount without rendering the real dashboard twice
 - releases the lease in `finally`
+
+Pi 0.84.x exposes the layout-root setter but no public getter, so exact restoration uses its runtime `layoutRoot` property through an isolated structural bridge. If a fullscreen TUI does not expose that setter/property shape, `ui.fullscreen()` safely falls back to the full-size overlay; that fallback cannot guarantee that terminal image placements from the transcript are cleared.
 
 Use `client.fullscreen.acquire()` only when you need manual lease control.
 

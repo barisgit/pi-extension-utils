@@ -1,6 +1,6 @@
 # pi-extension-utils
 
-Shared utilities for Pi extensions that need coordinated UI, fullscreen overlays, reminders, and logging.
+Shared utilities for Pi extensions that need coordinated UI, fullscreen custom UIs, reminders, and logging.
 
 Two faces:
 
