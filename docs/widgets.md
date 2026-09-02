@@ -50,7 +50,7 @@ await client.ui.fullscreen((tui, theme, keybindings, done) => new MyComponent(tu
 
 ## Fallback
 
-If the host is not ready yet, widget calls use the extension's own `ctx.ui.setWidget`. When the host announces readiness, the client clears the fallback widget and re-registers through the coordinator.
+If the host is not ready yet, each logical widget registers one stable proxy through the extension's own `ctx.ui.setWidget`. Later `widgets.set` calls replace the proxy's delegated component and request a redraw without re-registering the raw widget, preserving cross-extension insertion order on Pi versions that delete before setting. Set and fullscreen-acquire activity also retry the hello handshake without a polling timer. When the host announces readiness, the client clears the fallback widget and re-registers through the coordinator.
 
 ## Example
 

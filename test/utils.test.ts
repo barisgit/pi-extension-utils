@@ -36,7 +36,7 @@ function createBus() {
 	};
 }
 
-function createCtx() {
+function createCtx(tui = {}, theme = {}) {
 	const widgets = new Map();
 	const calls = [];
 	return {
@@ -44,10 +44,17 @@ function createCtx() {
 		calls,
 		ui: {
 			setWidget(key, factory, opts = {}) {
-				const placement = opts.placement ?? "belowEditor";
+				const placement = opts.placement ?? "aboveEditor";
 				calls.push({ key, factory, placement });
-				if (factory === undefined) widgets.delete(`${placement}:${key}`);
-				else widgets.set(`${placement}:${key}`, { key, factory, placement });
+				for (const [id, widget] of widgets) {
+					if (widget.key !== key) continue;
+					widget.component.dispose?.();
+					widgets.delete(id);
+				}
+				if (factory !== undefined) {
+					const component = factory(tui, theme);
+					widgets.set(`${placement}:${key}`, { key, factory, component, placement });
+				}
 			},
 		},
 	};
@@ -106,7 +113,7 @@ function textFactory(text) {
 function renderHost(ctx, placement = "belowEditor") {
 	const entry = [...ctx.widgets.values()].find((widget) => widget.placement === placement && widget.key.startsWith("pi-extension-utils-"));
 	assert.ok(entry, `missing host widget for ${placement}`);
-	return entry.factory({}, {}).render(80);
+	return entry.component.render(80);
 }
 
 test("handshake works client before host and upgrades to coordinated", () => {
@@ -153,6 +160,24 @@ test("repeated ready does not double attach", () => {
 	assert.equal(registerEvents.length, 1);
 });
 
+test("fallback activity retries a missed hello without polling", () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "client-missed-hello" });
+	bus.on(EVENTS.hello, (data) => {
+		bus.emit(EVENTS.ready, { protocolVersion: 1, clientId: `host-for-${data.clientId}` });
+	});
+
+	client.widgets.set("belowEditor", "status", textFactory("attached"));
+
+	assert.equal(client.mode, "coordinated");
+	assert.equal(ctx.widgets.size, 0);
+	const registrations = bus.emitted.filter(
+		(event) => event.channel === EVENTS.registerWidget && event.data.clientId === "client-missed-hello",
+	);
+	assert.equal(registrations.length, 1);
+});
+
 test("no host fallback renders directly and remove clears", () => {
 	const bus = createBus();
 	const ctx = createCtx();
@@ -162,6 +187,105 @@ test("no host fallback renders directly and remove clears", () => {
 	assert.equal(ctx.widgets.size, 1);
 	client.widgets.remove("aboveEditor", "status");
 	assert.equal(ctx.widgets.size, 0);
+});
+
+test("fallback widget updates preserve raw cross-extension order and refresh mounted content", () => {
+	const bus = createBus();
+	let disposals = 0;
+	let invalidations = 0;
+	let redraws = 0;
+	const lifecycle = [];
+	const tui = {
+		requestRender() {
+			redraws++;
+		},
+	};
+	const ctx = createCtx(tui);
+	const a = connect(createPi(bus, ctx), { ctx, clientId: "fallback-order-a" });
+	const b = connect(createPi(bus, ctx), { ctx, clientId: "fallback-order-b" });
+	const factory = (text) => () => {
+		lifecycle.push(`factory:${text}`);
+		return {
+			render: () => [text],
+			invalidate() {
+				invalidations++;
+			},
+			dispose() {
+				lifecycle.push(`dispose:${text}`);
+				disposals++;
+			},
+		};
+	};
+
+	a.widgets.set("belowEditor", "a", factory("a1"));
+	b.widgets.set("belowEditor", "b", textFactory("b1"));
+	const rawA = ctx.widgets.get("belowEditor:a");
+	const mountedA = rawA.component;
+	assert.deepEqual(mountedA.render(80), ["a1"]);
+
+	a.widgets.set("belowEditor", "a", factory("a2"));
+	a.widgets.set("belowEditor", "a", factory("a3"));
+
+	assert.deepEqual([...ctx.widgets.keys()], ["belowEditor:a", "belowEditor:b"]);
+	assert.deepEqual(mountedA.render(80), ["a3"]);
+	mountedA.invalidate();
+	assert.equal(disposals, 2);
+	assert.equal(invalidations, 1);
+	assert.equal(redraws, 2);
+	assert.deepEqual(lifecycle, ["factory:a1", "dispose:a1", "factory:a2", "dispose:a2", "factory:a3"]);
+	assert.equal(ctx.calls.filter((call) => call.factory !== undefined).length, 2);
+	a.widgets.remove("belowEditor", "a");
+	a.widgets.remove("belowEditor", "a");
+	assert.equal(disposals, 3);
+});
+
+test("fallback proxy recovers after an out-of-band clear", () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	const client = connect(createPi(bus, ctx), { ctx, clientId: "fallback-recovery" });
+
+	client.widgets.set("belowEditor", "status", textFactory("first"));
+	const stableFactory = ctx.widgets.get("belowEditor:status").factory;
+	ctx.ui.setWidget("status", textFactory("intruder"), { placement: "aboveEditor" });
+	assert.equal(ctx.widgets.has("belowEditor:status"), false);
+	assert.equal(ctx.widgets.has("aboveEditor:status"), true);
+	ctx.ui.setWidget("status", undefined, { placement: "belowEditor" });
+	assert.equal(ctx.widgets.size, 0);
+
+	client.widgets.set("belowEditor", "status", textFactory("recovered"));
+
+	const recovered = ctx.widgets.get("belowEditor:status");
+	assert.ok(recovered);
+	assert.equal(recovered.factory, stableFactory);
+	assert.deepEqual(recovered.component.render(80), ["recovered"]);
+});
+
+test("fallback proxy unmounts once across fullscreen, late attach, and dispose", () => {
+	const disposableFactory = (onDispose) => () => ({
+		render: () => ["mounted"],
+		invalidate() {},
+		dispose: onDispose,
+	});
+	const fullscreenBus = createBus();
+	const fullscreenCtx = createCtx();
+	const fullscreenClient = connect(createPi(fullscreenBus, fullscreenCtx), { ctx: fullscreenCtx, clientId: "fallback-lifecycle" });
+	let fullscreenDisposals = 0;
+	fullscreenClient.widgets.set("belowEditor", "status", disposableFactory(() => fullscreenDisposals++));
+	const lease = fullscreenClient.fullscreen.acquire();
+	assert.equal(fullscreenDisposals, 1);
+	lease.release();
+	fullscreenClient.dispose();
+	fullscreenClient.dispose();
+	assert.equal(fullscreenDisposals, 2);
+
+	const attachBus = createBus();
+	const attachCtx = createCtx();
+	const attachClient = connect(createPi(attachBus, attachCtx), { ctx: attachCtx, clientId: "fallback-attach" });
+	let attachDisposals = 0;
+	attachClient.widgets.set("belowEditor", "status", disposableFactory(() => attachDisposals++));
+	attachBus.emit(EVENTS.ready, { protocolVersion: 1, clientId: "host" });
+	attachBus.emit(EVENTS.ready, { protocolVersion: 1, clientId: "host" });
+	assert.equal(attachDisposals, 1);
 });
 
 test("reminders face emits host payloads and lists host snapshot", async () => {
@@ -597,7 +721,6 @@ test("ui.fullscreen keeps the overlay fallback when the prior layout root cannot
 
 test("ui.fullscreen preserves the editor-slot mount after regular TUI mode is captured", async () => {
 	const bus = createBus();
-	const ctx = createCtx();
 	let customOptions = "not-called";
 	let invalidations = 0;
 	let rootSet = false;
@@ -614,6 +737,7 @@ test("ui.fullscreen preserves the editor-slot mount after regular TUI mode is ca
 			rootSet = true;
 		},
 	};
+	const ctx = createCtx(tui);
 	const dashboard = { render: () => ["dashboard"] };
 	ctx.ui.custom = async (factory, options) => {
 		customOptions = options;
@@ -624,7 +748,7 @@ test("ui.fullscreen preserves the editor-slot mount after regular TUI mode is ca
 	client.widgets.set("belowEditor", "capture", textFactory("capture"));
 	const widget = [...ctx.widgets.values()][0];
 	assert.ok(widget);
-	widget.factory({ mode: "regular" }, {}).render(80);
+	widget.component.render(80);
 
 	await client.ui.fullscreen(() => dashboard);
 

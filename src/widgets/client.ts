@@ -37,7 +37,20 @@ interface WidgetRecord {
 	placement: WidgetPlacement;
 	key: string;
 	factory: WidgetFactory;
+	fallbackFactory: WidgetFactory;
+	fallbackMount?: FallbackMount;
 	order: number;
+}
+
+interface FallbackTui {
+	requestRender?(force?: boolean): void;
+}
+
+interface FallbackMount {
+	tui: Parameters<WidgetFactory>[0];
+	theme: Parameters<WidgetFactory>[1];
+	component: ReturnType<WidgetFactory>;
+	disposed: boolean;
 }
 
 let nextLeaseId = 1;
@@ -68,12 +81,60 @@ export function connectWidgetCoordinator(pi: ExtensionAPI, opts: WidgetCoordinat
 		});
 	}
 
+	function emitHello(): void {
+		pi.events.emit(EVENTS.hello, basePayload(clientId));
+	}
+
+	function createWidgetRecord(placement: WidgetPlacement, key: string, factory: WidgetFactory, order: number): WidgetRecord {
+		const record: WidgetRecord = {
+			placement,
+			key,
+			factory,
+			fallbackFactory: (tui, theme) => {
+				const mount: FallbackMount = {
+					tui,
+					theme,
+					component: record.factory(tui, theme),
+					disposed: false,
+				};
+				record.fallbackMount = mount;
+				return {
+					render: (width: number) => (mount.disposed ? [] : mount.component.render(width)),
+					invalidate: () => {
+						if (!mount.disposed) mount.component.invalidate?.();
+					},
+					dispose: () => {
+						if (mount.disposed) return;
+						mount.disposed = true;
+						mount.component.dispose?.();
+						if (record.fallbackMount === mount) record.fallbackMount = undefined;
+					},
+				};
+			},
+			order,
+		};
+		return record;
+	}
+
+	function updateFallback(record: WidgetRecord): void {
+		const mount = record.fallbackMount;
+		if (!mount || mount.disposed) {
+			restoreFallback(record);
+			return;
+		}
+		mount.disposed = true;
+		mount.component.dispose?.();
+		mount.component = record.factory(mount.tui, mount.theme);
+		mount.disposed = false;
+		(mount.tui as FallbackTui | null | undefined)?.requestRender?.();
+	}
+
 	function clearFallback(record: WidgetRecord): void {
 		opts.ctx.ui.setWidget(record.key, undefined, { placement: record.placement });
 	}
 
 	function restoreFallback(record: WidgetRecord): void {
-		opts.ctx.ui.setWidget(record.key, record.factory, { placement: record.placement });
+		opts.ctx.ui.setWidget(record.key, record.fallbackFactory, { placement: record.placement });
 	}
 
 	function attach(): void {
@@ -93,7 +154,7 @@ export function connectWidgetCoordinator(pi: ExtensionAPI, opts: WidgetCoordinat
 		attach();
 	});
 
-	pi.events.emit(EVENTS.hello, basePayload(clientId));
+	emitHello();
 
 	const fullscreen: FullscreenClient = {
 		acquire(): FullscreenLease {
@@ -106,6 +167,7 @@ export function connectWidgetCoordinator(pi: ExtensionAPI, opts: WidgetCoordinat
 			} else if (wasFallbackVisible) {
 				for (const record of widgets.values()) clearFallback(record);
 			}
+			if (!coordinated) emitHello();
 			return {
 				release() {
 					if (released) return;
@@ -128,18 +190,27 @@ export function connectWidgetCoordinator(pi: ExtensionAPI, opts: WidgetCoordinat
 		widgets: {
 			set(placement: WidgetPlacement, key: string, factory: WidgetFactory, setOpts: WidgetSetOptions = {}) {
 				if (disposed) return;
-				const record = {
-					placement,
-					key,
-					factory: opts.tui ? withTuiCapture(factory, opts.tui) : factory,
-					order: setOpts.order ?? 0,
-				};
-				widgets.set(widgetId(placement, key), record);
+				const id = widgetId(placement, key);
+				const wrappedFactory = opts.tui ? withTuiCapture(factory, opts.tui) : factory;
+				let record = widgets.get(id);
+				const isNew = !record;
+				if (record) {
+					record.factory = wrappedFactory;
+					record.order = setOpts.order ?? 0;
+				} else {
+					record = createWidgetRecord(placement, key, wrappedFactory, setOpts.order ?? 0);
+					widgets.set(id, record);
+				}
 				if (coordinated) {
 					emitRegister(record);
 				} else if (leases.size === 0) {
-					opts.ctx.ui.setWidget(key, record.factory, { placement });
+					if (isNew) {
+						restoreFallback(record);
+					} else {
+						updateFallback(record);
+					}
 				}
+				if (!coordinated) emitHello();
 			},
 			remove(placement: WidgetPlacement, key: string) {
 				const id = widgetId(placement, key);
