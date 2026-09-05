@@ -145,7 +145,7 @@ function createHostComponent(tui: Parameters<WidgetFactory>[0], theme: Parameter
 	// whole agent: render failures drop that widget until its client
 	// re-registers. Records are replaced wholesale on every re-registration
 	// and remount, so a dropped component cannot linger past the handshake.
-	const healthy: ReturnType<WidgetFactory>[] = [];
+	let healthy: ReturnType<WidgetFactory>[] = [];
 	if (!hidden) {
 		for (const record of records) {
 			try {
@@ -161,12 +161,15 @@ function createHostComponent(tui: Parameters<WidgetFactory>[0], theme: Parameter
 	return {
 		render(width) {
 			const lines: string[] = [];
+			const failed = new Set<ReturnType<WidgetFactory>>();
 			for (const component of [...healthy]) {
+				if (failed.has(component)) continue;
 				try {
 					lines.push(...component.render(width));
 				} catch (error) {
-					const failedIndex = healthy.indexOf(component);
-					if (failedIndex >= 0) healthy.splice(failedIndex, 1);
+					failed.add(component);
+					healthy = healthy.filter((child) => child !== component);
+					disposeChild(component);
 					console.warn(
 						`pi-extension-utils: widget render threw, dropping it until re-registration`,
 					error instanceof Error ? error.message : error,
@@ -174,6 +177,9 @@ function createHostComponent(tui: Parameters<WidgetFactory>[0], theme: Parameter
 				}
 			}
 			return lines;
+		},
+		dispose() {
+			for (const component of new Set(healthy.splice(0))) disposeChild(component);
 		},
 		invalidate() {
 			for (const component of healthy) {
@@ -185,6 +191,14 @@ function createHostComponent(tui: Parameters<WidgetFactory>[0], theme: Parameter
 			}
 		},
 	};
+}
+
+function disposeChild(component: ReturnType<WidgetFactory>): void {
+	try {
+		component.dispose?.();
+	} catch (error) {
+		console.warn("pi-extension-utils: widget dispose threw", error instanceof Error ? error.message : error);
+	}
 }
 
 function hostKey(placement: WidgetPlacement): string {

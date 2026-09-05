@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import hostExtension from "../index.ts";
+import { registerWidgetHost } from "../src/widgets/host.ts";
+import { connectWidgetCoordinator } from "../src/widgets/client.ts";
 import {
 	connect,
 	createLogger,
@@ -116,6 +118,151 @@ function renderHost(ctx, placement = "belowEditor") {
 	return entry.component.render(80);
 }
 
+test("host disposes owned children on replacement, removal, fullscreen and teardown", () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	registerWidgetHost(createPi(bus, ctx));
+	const client = connectWidgetCoordinator(createPi(bus, ctx), { ctx, clientId: "owned" });
+	const children = [];
+	const factory = () => {
+		const child = {
+			disposals: 0,
+			render() { assert.equal(this.disposals, 0); return ["live"]; },
+			invalidate() { assert.equal(this.disposals, 0); },
+			dispose() { this.disposals++; },
+		};
+		children.push(child);
+		return child;
+	};
+	client.widgets.set("belowEditor", "status", factory);
+	const firstHost = [...ctx.widgets.values()][0].component;
+	assert.deepEqual(renderHost(ctx), ["live"]);
+	assert.equal(children[0].disposals, 0);
+	client.widgets.set("belowEditor", "status", factory);
+	assert.deepEqual(children.map((child) => child.disposals), [1, 0]);
+	firstHost.dispose();
+	assert.deepEqual(firstHost.render(80), []);
+	firstHost.invalidate();
+	assert.equal(children[0].disposals, 1);
+	client.widgets.remove("belowEditor", "status");
+	assert.deepEqual(children.map((child) => child.disposals), [1, 1]);
+	client.widgets.set("belowEditor", "status", factory);
+	const lease = client.fullscreen.acquire();
+	assert.deepEqual(children.map((child) => child.disposals), [1, 1, 1]);
+	lease.release();
+	assert.deepEqual(renderHost(ctx), ["live"]);
+	client.dispose();
+	client.dispose();
+	assert.deepEqual(children.map((child) => child.disposals), [1, 1, 1, 1]);
+	const other = connectWidgetCoordinator(createPi(bus, ctx), { ctx, clientId: "remaining" });
+	other.widgets.set("aboveEditor", "status", factory);
+	other.widgets.set("belowEditor", "status", factory);
+	// Pi's resetExtensionUI clears every raw widget on teardown.
+	for (const entry of [...ctx.widgets.values()]) ctx.ui.setWidget(entry.key, undefined);
+	assert.ok(children.every((child) => child.disposals === 1));
+});
+
+test("host drops failed children once and isolates throwing cleanup", (t) => {
+	t.mock.method(console, "warn", () => {});
+	const bus = createBus();
+	const ctx = createCtx();
+	registerWidgetHost(createPi(bus, ctx));
+	const client = connectWidgetCoordinator(createPi(bus, ctx), { ctx, clientId: "failed" });
+	let failedDisposals = 0;
+	let healthyDisposals = 0;
+	client.widgets.set("belowEditor", "broken", () => ({
+		render() { throw new Error("render failed"); },
+		invalidate() {},
+		dispose() { failedDisposals++; throw new Error("cleanup failed"); },
+	}));
+	assert.deepEqual(renderHost(ctx), []);
+	assert.equal(failedDisposals, 1);
+	assert.deepEqual(renderHost(ctx), []);
+	assert.equal(failedDisposals, 1);
+	client.widgets.set("belowEditor", "healthy", () => ({
+		render: () => ["healthy"],
+		invalidate() {},
+		dispose() { healthyDisposals++; },
+	}));
+	client.widgets.set("belowEditor", "factory-failure", () => { throw new Error("factory failed"); });
+	// Re-registration remounts existing records, even a previously failed one.
+	assert.equal(failedDisposals, 2);
+	assert.equal(healthyDisposals, 1);
+	assert.deepEqual(renderHost(ctx), ["healthy"]);
+	assert.equal(failedDisposals, 3);
+	client.dispose();
+	client.dispose();
+	assert.equal(failedDisposals, 3);
+	assert.equal(healthyDisposals, 2);
+});
+
+test("host releases shared child identity only once after detaching every occurrence", (t) => {
+	t.mock.method(console, "warn", () => {});
+	for (const fails of [false, true]) {
+		const bus = createBus();
+		const ctx = createCtx();
+		let start;
+		const pi = { events: bus, on(event, handler) { if (event === "session_start") start = handler; } };
+		registerWidgetHost(pi);
+		const client = connectWidgetCoordinator(pi, { ctx, clientId: "shared" });
+		let disposals = 0;
+		let renders = 0;
+		const component = {
+			render() {
+				assert.equal(disposals, 0);
+				renders++;
+				if (fails) throw new Error("broken");
+				return ["shared"];
+			},
+			invalidate() { assert.equal(disposals, 0); },
+			dispose() { disposals++; },
+		};
+		client.widgets.set("belowEditor", "one", () => component);
+		client.widgets.set("belowEditor", "two", () => component);
+		start({}, ctx);
+		const host = [...ctx.widgets.values()][0].component;
+		assert.deepEqual(host.render(80), fails ? [] : ["shared", "shared"]);
+		assert.equal(renders, fails ? 1 : 2);
+		host.invalidate();
+		assert.equal(disposals, fails ? 1 : 0);
+		host.dispose();
+		host.dispose();
+		assert.equal(disposals, 1);
+		assert.deepEqual(host.render(80), []);
+	}
+});
+
+test("fallback keys isolate clients and placements through replacement, fullscreen and attach", () => {
+	const bus = createBus();
+	const ctx = createCtx();
+	const a = connectWidgetCoordinator(createPi(bus, ctx), { ctx, clientId: "a:belowEditor" });
+	const b = connectWidgetCoordinator(createPi(bus, ctx), { ctx, clientId: "a" });
+	a.widgets.set("aboveEditor", "status", textFactory("a-above"));
+	a.widgets.set("belowEditor", "status", textFactory("a-below"));
+	b.widgets.set("belowEditor", "status", textFactory("b"));
+	b.widgets.set("belowEditor", "aboveEditor:status", textFactory("delimiter"));
+	const lines = () => [...ctx.widgets.values()].flatMap((entry) => entry.component.render(80));
+	assert.deepEqual(lines(), ["a-above", "a-below", "b", "delimiter"]);
+	const rawKeys = [...ctx.widgets.keys()];
+	a.widgets.set("belowEditor", "status", textFactory("a-updated"));
+	assert.deepEqual([...ctx.widgets.keys()], rawKeys);
+	assert.deepEqual(lines(), ["a-above", "a-updated", "b", "delimiter"]);
+	a.widgets.remove("aboveEditor", "status");
+	assert.deepEqual(lines(), ["a-updated", "b", "delimiter"]);
+	const lease = a.fullscreen.acquire();
+	assert.deepEqual(lines(), ["b", "delimiter"]);
+	lease.release();
+	assert.deepEqual(lines(), ["b", "delimiter", "a-updated"]);
+	a.dispose();
+	assert.deepEqual(lines(), ["b", "delimiter"]);
+	const hostCtx = createCtx();
+	registerWidgetHost(createPi(bus, hostCtx));
+	assert.equal(ctx.widgets.size, 0);
+	assert.deepEqual(renderHost(hostCtx), ["b", "delimiter"]);
+	b.dispose();
+	assert.equal(hostCtx.widgets.size, 0);
+});
+
 test("handshake works client before host and upgrades to coordinated", () => {
 	const bus = createBus();
 	const clientCtx = createCtx();
@@ -219,14 +366,15 @@ test("fallback widget updates preserve raw cross-extension order and refresh mou
 
 	a.widgets.set("belowEditor", "a", factory("a1"));
 	b.widgets.set("belowEditor", "b", textFactory("b1"));
-	const rawA = ctx.widgets.get("belowEditor:a");
+	const rawKeys = [...ctx.widgets.keys()];
+	const rawA = [...ctx.widgets.values()][0];
 	const mountedA = rawA.component;
 	assert.deepEqual(mountedA.render(80), ["a1"]);
 
 	a.widgets.set("belowEditor", "a", factory("a2"));
 	a.widgets.set("belowEditor", "a", factory("a3"));
 
-	assert.deepEqual([...ctx.widgets.keys()], ["belowEditor:a", "belowEditor:b"]);
+	assert.deepEqual([...ctx.widgets.keys()], rawKeys);
 	assert.deepEqual(mountedA.render(80), ["a3"]);
 	mountedA.invalidate();
 	assert.equal(disposals, 2);
@@ -245,16 +393,16 @@ test("fallback proxy recovers after an out-of-band clear", () => {
 	const client = connect(createPi(bus, ctx), { ctx, clientId: "fallback-recovery" });
 
 	client.widgets.set("belowEditor", "status", textFactory("first"));
-	const stableFactory = ctx.widgets.get("belowEditor:status").factory;
-	ctx.ui.setWidget("status", textFactory("intruder"), { placement: "aboveEditor" });
-	assert.equal(ctx.widgets.has("belowEditor:status"), false);
-	assert.equal(ctx.widgets.has("aboveEditor:status"), true);
-	ctx.ui.setWidget("status", undefined, { placement: "belowEditor" });
+	const { key: rawKey, factory: stableFactory } = [...ctx.widgets.values()][0];
+	ctx.ui.setWidget(rawKey, textFactory("intruder"), { placement: "aboveEditor" });
+	assert.equal(ctx.widgets.has(`belowEditor:${rawKey}`), false);
+	assert.equal(ctx.widgets.has(`aboveEditor:${rawKey}`), true);
+	ctx.ui.setWidget(rawKey, undefined, { placement: "belowEditor" });
 	assert.equal(ctx.widgets.size, 0);
 
 	client.widgets.set("belowEditor", "status", textFactory("recovered"));
 
-	const recovered = ctx.widgets.get("belowEditor:status");
+	const recovered = ctx.widgets.get(`belowEditor:${rawKey}`);
 	assert.ok(recovered);
 	assert.equal(recovered.factory, stableFactory);
 	assert.deepEqual(recovered.component.render(80), ["recovered"]);
@@ -414,7 +562,8 @@ test("fallback fullscreen hides and restores own widgets", () => {
 	const b = textFactory("b");
 	client.widgets.set("belowEditor", "a", a);
 	client.widgets.set("aboveEditor", "b", b);
-	assert.deepEqual([...ctx.widgets.keys()], ["belowEditor:a", "aboveEditor:b"]);
+	const rawKeys = [...ctx.widgets.keys()];
+	assert.equal(rawKeys.length, 2);
 
 	const leaseA = client.fullscreen.acquire();
 	assert.equal(ctx.widgets.size, 0);
@@ -424,7 +573,7 @@ test("fallback fullscreen hides and restores own widgets", () => {
 	leaseA.release();
 	assert.equal(ctx.widgets.size, 0);
 	leaseB.release();
-	assert.deepEqual([...ctx.widgets.keys()], ["belowEditor:a", "aboveEditor:b"]);
+	assert.deepEqual([...ctx.widgets.keys()], rawKeys);
 
 	const leaseC = client.fullscreen.acquire();
 	client.dispose();

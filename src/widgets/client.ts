@@ -129,12 +129,16 @@ export function connectWidgetCoordinator(pi: ExtensionAPI, opts: WidgetCoordinat
 		(mount.tui as FallbackTui | null | undefined)?.requestRender?.();
 	}
 
+	function fallbackKey(record: WidgetRecord): string {
+		return `pi-extension-utils-fallback:${JSON.stringify([clientId, record.placement, record.key])}`;
+	}
+
 	function clearFallback(record: WidgetRecord): void {
-		opts.ctx.ui.setWidget(record.key, undefined, { placement: record.placement });
+		opts.ctx.ui.setWidget(fallbackKey(record), undefined, { placement: record.placement });
 	}
 
 	function restoreFallback(record: WidgetRecord): void {
-		opts.ctx.ui.setWidget(record.key, record.fallbackFactory, { placement: record.placement });
+		opts.ctx.ui.setWidget(fallbackKey(record), record.fallbackFactory, { placement: record.placement });
 	}
 
 	function attach(): void {
