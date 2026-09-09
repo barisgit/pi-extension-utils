@@ -1,6 +1,6 @@
 {
 	"name": "pi-extension-utils",
-	"version": "0.7.7",
+	"version": "0.7.8",
 	"description": "Shared Pi extension utilities for coordinated widgets, fullscreen leases, and logging.",
 	"type": "module",
 	"main": "./dist/src/index.js",
@@ -43,10 +43,10 @@
 		"@earendil-works/pi-tui": "*"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-agent-core": "^0.75.4",
-		"@earendil-works/pi-ai": "^0.75.4",
-		"@earendil-works/pi-coding-agent": "^0.75.4",
-		"@earendil-works/pi-tui": "^0.79.3",
+		"@earendil-works/pi-agent-core": "^0.84.4",
+		"@earendil-works/pi-ai": "^0.84.4",
+		"@earendil-works/pi-coding-agent": "^0.84.4",
+		"@earendil-works/pi-tui": "^0.84.4",
 		"@types/node": "^24.0.0",
 		"typescript": "^6.0.3"
 	},
