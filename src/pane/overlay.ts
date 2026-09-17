@@ -382,8 +382,18 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			primaryState.scrollOffset = selectableIndex;
 		};
 
+		let previousPrimaryKeys: Array<string | undefined> = [];
 		const computeSelectionFromRows = (primaryRows: PaneOverlayPrimaryRow<Row>[], bodyHeight: number) => {
 			applyInitialSelection(primaryRows);
+			// The cursor indexes the previous snapshot. Resolve its stable identity
+			// before interpreting that index against refreshed or reordered rows.
+			if (options.primary.mode === "cursor" && options.primary.selectionKey) {
+				const keys = primaryRows.map((row, index) => isSeparatorRow(row) ? undefined : selectionKeyFor(row, index));
+				const previousKey = previousPrimaryKeys[primaryState.cursor];
+				const nextIndex = previousKey === undefined ? -1 : keys.indexOf(previousKey);
+				if (nextIndex >= 0) primaryState.cursor = nextIndex;
+				previousPrimaryKeys = keys;
+			}
 			const primaryMode = options.primary.mode ?? "scroll";
 			let selectedIndex = 0;
 			if (primaryMode === "cursor") {

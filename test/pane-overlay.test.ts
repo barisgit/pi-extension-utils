@@ -616,3 +616,33 @@ test("rendered lines are padded to the requested width", () => {
 		assert.equal(visibleWidth(line), 72);
 	}
 });
+
+test("keyed cursor follows the selected row through reorder, insertion and removal", () => {
+	let rows = ["a", "b", "c"];
+	const changes: string[] = [];
+	const { component, render } = mount(baseOptions({
+		primary: {
+			mode: "cursor",
+			rows: () => rows,
+			selectionKey: (row) => row,
+			renderRow: (row) => row,
+			onSelectionChange: (row) => { if (row) changes.push(row); },
+		},
+	}));
+	try {
+		render();
+		component.handleInput("j");
+		assert.match(render().join("\n"), /detail:b/);
+		for (const next of [["a", "c", "b"], ["a", "b", "c"], ["d", "a", "b", "c"], ["d", "b", "c"]]) {
+			rows = next;
+			assert.match(render().join("\n"), /detail:b/);
+		}
+		assert.deepEqual(changes, ["a", "b"], "refresh does not notify a different selection");
+		component.handleInput("j");
+		assert.match(render().join("\n"), /detail:c/, "navigation still moves after reordering");
+		rows = ["d", "b"];
+		assert.match(render().join("\n"), /detail:b/, "removed selection falls back to a valid row");
+	} finally {
+		component.dispose();
+	}
+});
