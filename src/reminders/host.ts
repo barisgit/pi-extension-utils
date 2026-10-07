@@ -320,20 +320,41 @@ function padToWidth(line: string, width: number): string {
 const SYSTEM_REMINDER_MIN_BODY_WIDTH = 76;
 const SYSTEM_REMINDER_BODY_WIDTH_RATIO = 0.9;
 
+/** Theme surface the reminder box uses; Pi's live theme satisfies it. */
+interface ReminderTheme {
+	fg(color: "accent" | "dim", text: string): string;
+}
+
+/**
+ * Bordered transcript box for one reminder message.
+ *
+ * Content and details are fixed for the component's lifetime, so the laid-out lines depend only on
+ * width and theme colors. Lines are cached for the last width because the TUI renders every
+ * transcript component on each frame and large reminders are expensive to re-wrap. `invalidate()`
+ * drops the cache so theme changes take effect on the next render.
+ */
 class SystemReminderComponent implements Component {
 	private readonly content: string;
 	private readonly details: ReminderMessageDetails | undefined;
-	private readonly theme: any;
+	private readonly theme: ReminderTheme;
+	private cache: { width: number; lines: string[] } | undefined;
 
-	constructor(content: string, details: ReminderMessageDetails | undefined, theme: any) {
+	constructor(content: string, details: ReminderMessageDetails | undefined, theme: ReminderTheme) {
 		this.content = content;
 		this.details = details;
 		this.theme = theme;
 	}
 
-	invalidate(): void {}
+	invalidate(): void {
+		this.cache = undefined;
+	}
 
 	render(width: number): string[] {
+		if (this.cache?.width !== width) this.cache = { width, lines: this.layout(width) };
+		return this.cache.lines;
+	}
+
+	private layout(width: number): string[] {
 		if (width < 3) return [truncateToWidth("System Reminder", width)];
 
 		const availableBodyWidth = width - 2;
