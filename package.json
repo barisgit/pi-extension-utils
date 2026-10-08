@@ -13,6 +13,8 @@
 	},
 	"files": [
 		"dist",
+		"index.ts",
+		"src",
 		"docs",
 		"examples",
 		"README.md",
@@ -20,7 +22,7 @@
 	],
 	"pi": {
 		"extensions": [
-			"./dist/index.js"
+			"./index.ts"
 		]
 	},
 	"scripts": {

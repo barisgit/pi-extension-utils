@@ -4,7 +4,7 @@ Shared utilities for Pi extensions that need coordinated UI, fullscreen custom U
 
 Two faces:
 
-- **Host extension** — `package.json` loads `./dist/index.js` once per Pi session.
+- **Host extension** — `package.json` loads the TypeScript entry `./index.ts` once per Pi session, so Git installs work without a build step.
 - **Client library** — other extensions import from `pi-extension-utils`.
 
 ## Quick Start
