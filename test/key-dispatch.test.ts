@@ -62,3 +62,14 @@ test("extra bindings run before banned and common navigation", () => {
 	assert.equal(consumed, true);
 	assert.deepEqual(calls, ["sidebar"]);
 });
+
+test("injected select bindings replace defaults while pane j/k shortcuts remain", () => {
+	const keybindings = { matches: (data: string, action: string) => data === ({ "tui.select.down": "n", "tui.select.up": "p", "tui.select.pageDown": "f", "tui.select.cancel": "x" } as Record<string, string>)[action] };
+	assert.deepEqual(recordDispatch("n", { keybindings }), ["consumed:true", "move:1"]);
+	assert.deepEqual(recordDispatch("p", { keybindings }), ["consumed:true", "move:-1"]);
+	assert.deepEqual(recordDispatch("f", { keybindings }), ["consumed:true", "page:1"]);
+	assert.deepEqual(recordDispatch("x", { keybindings }), ["consumed:true", "close"]);
+	assert.deepEqual(recordDispatch("\u001b[B", { keybindings }), ["consumed:false"]);
+	assert.deepEqual(recordDispatch("\u001b", { keybindings }), ["consumed:false"]);
+	assert.deepEqual(recordDispatch("j", { keybindings }), ["consumed:true", "move:1"]);
+});

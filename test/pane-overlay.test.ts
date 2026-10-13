@@ -674,3 +674,22 @@ test("normalized mouse selects, captures divider drag, activates double-click, a
 	assert.ok(render()[1].includes("line-0"));
 	component.dispose();
 });
+
+test("pane uses injected selection, cancel, and confirm bindings", () => {
+	let opened: unknown;
+	let closed = false;
+	const bindings = { matches: (data: string, action: string) => data === ({ "tui.select.down": "n", "tui.select.confirm": "o", "tui.select.cancel": "x" } as Record<string, string>)[action] };
+	const component = paneOverlay(baseOptions({ customActions: [{ keys: "return", label: "open", run: (ctx) => { opened = ctx.selectedRow; } }] }))({ terminal: { rows: 24 } }, theme, bindings, () => { closed = true; }) as PaneOverlayComponent;
+	component.render(100);
+	component.handleInput("n");
+	component.handleInput("o");
+	assert.equal(opened, "beta");
+	component.handleInput("\u001b[B");
+	component.handleInput("o");
+	assert.equal(opened, "beta");
+	component.handleInput("\u001b");
+	assert.equal(closed, false);
+	component.handleInput("x");
+	assert.equal(closed, true);
+	component.dispose();
+});

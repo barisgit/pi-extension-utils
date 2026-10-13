@@ -23,7 +23,7 @@ import {
 	titledTopSegment,
 	type ChromeTheme,
 } from "./chrome.ts";
-import { type TuiMouseEvent, type TuiMouseEventResult, matchesKey } from "@earendil-works/pi-tui";
+import { type KeybindingsManager, type TuiMouseEvent, type TuiMouseEventResult, matchesKey } from "@earendil-works/pi-tui";
 
 type MatchKey = Parameters<typeof matchesKey>[1];
 
@@ -229,7 +229,15 @@ export function paneOverlay<T = undefined, Row = unknown>(
 	const collapseKey = collapse?.key ?? "c";
 	const collapsedWidth = collapse?.collapsedWidth ?? 1;
 
-	return (tui, theme, _keybindings, done) => {
+	return (tui, theme, injectedKeybindings, done) => {
+		const keybindings = injectedKeybindings as Partial<Pick<KeybindingsManager, "matches">> | undefined;
+		const matchesBinding = (data: string, binding: string | readonly string[] | undefined): boolean => {
+			const keys = typeof binding === "string" ? [binding] : binding ?? [];
+			return keys.some((key) => {
+				const action = key === "escape" ? "tui.select.cancel" : key === "return" || key === "enter" ? "tui.select.confirm" : key === "pageUp" ? "tui.select.pageUp" : key === "pageDown" ? "tui.select.pageDown" : undefined;
+				return action && keybindings?.matches ? keybindings.matches(data, action) : matchesAny(data, key);
+			});
+		};
 		const chromeTheme = theme as ChromeTheme;
 		let finished = false;
 		let focus: "primary" | "detail" = "primary";
@@ -938,7 +946,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 				}
 				const bodyHeight = computeBodyHeight(tui, options.height);
 
-				if (matchesAny(data, closeKeys)) {
+				if (matchesBinding(data, closeKeys)) {
 					finish(options.closeResult as T);
 					return;
 				}
@@ -951,14 +959,14 @@ export function paneOverlay<T = undefined, Row = unknown>(
 
 				for (const action of customActions) {
 					if (action.when && !action.when(ctx)) continue;
-					if (matchesAny(data, action.keys)) {
+					if (matchesBinding(data, action.keys)) {
 						action.run(ctx);
 						requestRender();
 						return;
 					}
 				}
 
-				if (matchesAny(data, bannedKeys)) {
+				if (matchesBinding(data, bannedKeys)) {
 					requestRender();
 					return;
 				}
@@ -978,9 +986,10 @@ export function paneOverlay<T = undefined, Row = unknown>(
 
 				const legendLineCount = legendPlacement === "primary" ? renderLegendLines(legendEntries(ctx), lastRenderWidth).length : 0;
 
-				if (matchesAny(data, ["pageUp", "pageDown"])) return;
+				if (matchesBinding(data, ["pageUp", "pageDown"])) return;
 
 				const commonConsumed = dispatchNavKeys(data, {
+					keybindings,
 					close: () => undefined,
 					closeKeys: [],
 					move: (delta) => {

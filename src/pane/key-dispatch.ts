@@ -1,4 +1,4 @@
-import { matchesKey } from "@earendil-works/pi-tui";
+import { type KeybindingsManager, matchesKey } from "@earendil-works/pi-tui";
 
 type MatchKey = Parameters<typeof matchesKey>[1];
 
@@ -10,6 +10,8 @@ export interface ExtraKeyBinding {
 }
 
 export interface NavKeyHandlers {
+	/** Host selection bindings; explicit pane shortcuts remain local. */
+	keybindings?: Partial<Pick<KeybindingsManager, "matches">>;
 	close?: () => void;
 	focusToggle?: () => void;
 	move?: (delta: 1 | -1) => void;
@@ -28,7 +30,10 @@ const DEFAULT_CLOSE_KEYS = ["escape", "ctrl+c"] as const;
 
 /** Dispatch common fullscreen navigation keys using pi-tui `matchesKey` semantics. */
 export function dispatchNavKeys(data: string, handlers: NavKeyHandlers): boolean {
-	if (matchesAny(data, handlers.closeKeys ?? DEFAULT_CLOSE_KEYS)) {
+	const selectMatches = (action: "tui.select.up" | "tui.select.down" | "tui.select.pageUp" | "tui.select.pageDown" | "tui.select.cancel", fallback: string) =>
+		handlers.keybindings?.matches ? handlers.keybindings.matches(data, action) : matchesAny(data, fallback);
+	const closeKeys = handlers.closeKeys ?? DEFAULT_CLOSE_KEYS;
+	if (matchesAny(data, closeKeys.filter((key) => key !== "escape")) || (closeKeys.includes("escape") && selectMatches("tui.select.cancel", "escape"))) {
 		handlers.close?.();
 		return true;
 	}
@@ -43,19 +48,19 @@ export function dispatchNavKeys(data: string, handlers: NavKeyHandlers): boolean
 		handlers.focusToggle?.();
 		return true;
 	}
-	if (matchesAny(data, ["j", "down"])) {
+	if ((matchesAny(data, "j") || selectMatches("tui.select.down", "down"))) {
 		handlers.move?.(1);
 		return true;
 	}
-	if (matchesAny(data, ["k", "up"])) {
+	if ((matchesAny(data, "k") || selectMatches("tui.select.up", "up"))) {
 		handlers.move?.(-1);
 		return true;
 	}
-	if (matchesAny(data, ["pageDown"])) {
+	if (selectMatches("tui.select.pageDown", "pageDown")) {
 		handlers.page?.(1);
 		return true;
 	}
-	if (matchesAny(data, ["pageUp"])) {
+	if (selectMatches("tui.select.pageUp", "pageUp")) {
 		handlers.page?.(-1);
 		return true;
 	}
