@@ -217,8 +217,9 @@ export function padRight(text: string, width: number): string {
 /** Slice text by visible width and preserve ANSI color resets when present. */
 export function clipStyled(text: string, width: number): string {
 	if (width <= 0) return "";
-	if (!text.includes("\u001b[")) return clipText(text, width);
-	return truncateToWidth(text, width, "");
+	const clipped = truncateToWidth(text, width, "");
+	// Pi appends a reset on truncation, even to plain text. Keep plain callers plain.
+	return text.includes("\u001b[") ? clipped : clipped.replace(/\u001b\[0m$/, "");
 }
 
 /** Slice text by character count (NOT visible width). For label text after `clipText` we then re-measure with visibleWidth. */

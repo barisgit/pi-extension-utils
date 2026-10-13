@@ -92,3 +92,9 @@ test("header, footer, key rows, and scroll info format exactly", () => {
 	assert.equal(formatScrollInfo(0, 3), "↓ 3 more");
 	assert.equal(formatScrollInfo(2, 3), "↑ 2 more  ↓ 3 more");
 });
+
+test("clipStyled never splits CJK or emoji beyond its column budget", () => {
+	for (const text of ["界界", "😀😀", "\x1b[31m界界\x1b[0m"]) {
+		assert.ok(visibleWidth(clipStyled(text, 3)) <= 3);
+	}
+});
