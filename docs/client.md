@@ -1,9 +1,9 @@
 # Client APIs
 
-Import from the package root:
+In Pi extensions, import through the host-resolved entry:
 
 ```ts
-import { connect, createLogger, paneOverlay } from "pi-extension-utils";
+import { connect, createLogger, paneOverlay } from "pi-extension-utils/pi";
 ```
 
 ## Connect

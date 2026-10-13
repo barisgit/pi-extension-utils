@@ -7,7 +7,7 @@
 ```ts
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
-import { defineConfig } from "pi-extension-utils";
+import { defineConfig } from "pi-extension-utils/pi";
 
 const schema = Type.Object({
   asyncByDefault: Type.Boolean({

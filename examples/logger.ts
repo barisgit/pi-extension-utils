@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createLogger } from "pi-extension-utils";
+import { createLogger } from "pi-extension-utils/pi";
 
 const log = createLogger("example-extension", {
   level: "info",

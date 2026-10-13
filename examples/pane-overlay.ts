@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connect, paneOverlay } from "pi-extension-utils";
+import { connect, paneOverlay } from "pi-extension-utils/pi";
 
 interface RunRow {
   id: string;

@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connect } from "pi-extension-utils";
+import { connect } from "pi-extension-utils/pi";
 
 export default function (pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
