@@ -693,3 +693,12 @@ test("pane uses injected selection, cancel, and confirm bindings", () => {
 	assert.equal(closed, true);
 	component.dispose();
 });
+
+test("clicking primary info or legend never selects a hidden list row", () => {
+	const { component, render } = mount(baseOptions({ height: 20, legendPlacement: "primary", primary: { mode: "cursor", rows: Array.from({ length: 50 }, (_, i) => `row-${i}`), info: ["info text"] } }));
+	const lines = render();
+	const infoRow = lines.findIndex((line) => line.includes("info text"));
+	component.handleMouse({ type: "press", button: "left", x: 3, y: infoRow, screenX: 3, screenY: infoRow, width: 100, height: 24, shift: false, alt: false, ctrl: false });
+	assert.ok(render().some((line) => line.includes("1/50")));
+	component.dispose();
+});

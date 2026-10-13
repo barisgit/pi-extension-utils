@@ -693,6 +693,12 @@ export function paneOverlay<T = undefined, Row = unknown>(
 				if (inPrimaryColumn && !collapsed) {
 					focus = "primary";
 					if ((options.primary.mode ?? "scroll") === "cursor") {
+						const { primaryRows, viewportHeight } = withPrimaryViewport(bodyHeight, legendLineCount);
+						if (event.y > viewportHeight || primaryState.scrollOffset + event.y - 1 >= primaryRows.length) {
+							lastPrimaryClick = undefined;
+							requestRender();
+							return;
+						}
 						const rowIndex = event.y - 1;
 						const absoluteIndex = primaryState.scrollOffset + rowIndex;
 						applyPrimaryNav(bodyHeight, legendLineCount, (state, rows, viewportHeight) => {
@@ -738,8 +744,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 				const divider = currentWidths().primaryWidth + 1;
 				const capture = event.type === "press" && !collapsed && event.x === divider;
 				if (event.type === "click") {
-					const primaryHeight = withPrimaryViewport(computeBodyHeight(tui, options.height), 0).viewportHeight;
-					if (event.clickCount === 2 && event.x >= 1 && event.x < divider && event.y >= 1 && event.y <= primaryHeight && (options.primary.mode ?? "scroll") === "cursor") {
+					if (event.clickCount === 2 && lastPrimaryClick?.row === event.y && lastPrimaryClick.col === event.x && event.x >= 1 && event.x < divider && (options.primary.mode ?? "scroll") === "cursor") {
 						const bodyHeight = computeBodyHeight(tui, options.height);
 						const { primaryWidth, detailWidth } = currentWidths();
 						const selection = computeSelectionFromRows(getPrimaryRows(makeContext(0, undefined, "", primaryWidth, detailWidth)), bodyHeight);
