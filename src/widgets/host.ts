@@ -1,3 +1,4 @@
+import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	basePayload,
@@ -146,6 +147,8 @@ function createHostComponent(tui: Parameters<WidgetFactory>[0], theme: Parameter
 	// re-registers. Records are replaced wholesale on every re-registration
 	// and remount, so a dropped component cannot linger past the handshake.
 	let healthy: ReturnType<WidgetFactory>[] = [];
+	let bounds: { component: ReturnType<WidgetFactory>; top: number; height: number }[] = [];
+	let captured: typeof bounds[number] | undefined;
 	if (!hidden) {
 		for (const record of records) {
 			try {
@@ -160,12 +163,15 @@ function createHostComponent(tui: Parameters<WidgetFactory>[0], theme: Parameter
 	}
 	return {
 		render(width) {
+			bounds = [];
 			const lines: string[] = [];
 			const failed = new Set<ReturnType<WidgetFactory>>();
 			for (const component of [...healthy]) {
 				if (failed.has(component)) continue;
 				try {
-					lines.push(...component.render(width));
+					const childLines = component.render(width);
+					bounds.push({ component, top: lines.length, height: childLines.length });
+					lines.push(...childLines);
 				} catch (error) {
 					failed.add(component);
 					healthy = healthy.filter((child) => child !== component);
@@ -178,7 +184,17 @@ function createHostComponent(tui: Parameters<WidgetFactory>[0], theme: Parameter
 			}
 			return lines;
 		},
+		handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+			const child = captured ?? bounds.find(({ top, height }) => event.y >= top && event.y < top + height);
+			if (!child || !healthy.includes(child.component)) return undefined;
+			const result = child.component.handleMouse?.({ ...event, y: event.y - child.top, height: child.height });
+			if (result?.capture) captured = child;
+			if (event.type === "release") captured = undefined;
+			return result;
+		},
 		dispose() {
+			bounds = [];
+			captured = undefined;
 			for (const component of new Set(healthy.splice(0))) disposeChild(component);
 		},
 		invalidate() {

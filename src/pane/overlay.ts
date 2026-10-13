@@ -23,7 +23,7 @@ import {
 	titledTopSegment,
 	type ChromeTheme,
 } from "./chrome.ts";
-import { matchesKey } from "@earendil-works/pi-tui";
+import { type TuiMouseEvent, type TuiMouseEventResult, matchesKey } from "@earendil-works/pi-tui";
 
 type MatchKey = Parameters<typeof matchesKey>[1];
 
@@ -134,6 +134,7 @@ export interface PaneOverlayOptions<T = unknown, Row = unknown> {
 export interface PaneOverlayComponent {
 	render(width: number): string[];
 	handleInput(data: string): void;
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined;
 	dispose(): void;
 }
 
@@ -603,15 +604,8 @@ export function paneOverlay<T = undefined, Row = unknown>(
 			return entries.map((entry) => chromeTheme.fg("dim", renderKeyRow(entry.key, entry.label, totalWidth, keyWidth)));
 		};
 
-		/**
-		 * Mouse support for forwarded SGR sequences. Wheel scrolls the pane under
-		 * the pointer; click selects
-		 * rows and focuses panes; double-click activates (synthesizes Enter);
-		 * dragging the divider resizes the split. All bounds are in overlay-local
-		 * coordinates: the overlay mounts top-left at 100% width, so terminal
-		 * columns/rows map 1:1 to rendered lines.
-		 */
-		const handleMouseEvent = (event: SgrMouseEvent): void => {
+		/** Shared pane hit-testing; the raw adapter also supports consumers synthesizing wheel reports. */
+		const handleMouseEvent = (event: SgrMouseEvent, detectDoubleClick = true): void => {
 			if (finished) return;
 			const totalWidth = lastRenderWidth;
 			if (totalWidth <= 0) return;
@@ -706,7 +700,7 @@ export function paneOverlay<T = undefined, Row = unknown>(
 							&& now - lastPrimaryClick.at < 450;
 						lastPrimaryClick = { row: event.y, col: event.x, at: now };
 						requestRender();
-						if (isDoubleClick) componentRef?.handleInput("\r");
+						if (detectDoubleClick && isDoubleClick) componentRef?.handleInput("\r");
 						return;
 					}
 					requestRender();
@@ -722,6 +716,36 @@ export function paneOverlay<T = undefined, Row = unknown>(
 		};
 
 		const component: PaneOverlayComponent = {
+			handleMouse(event) {
+				if (finished) return undefined;
+				if (event.type === "wheel") {
+					const delta = event.wheelDelta ?? 0;
+					for (let line = 0; line < Math.abs(delta); line++) {
+						handleMouseEvent({ ...event, button: delta < 0 ? 64 : 65, press: false, release: false, motion: false }, false);
+					}
+					// Contain overscroll, including empty panes and chrome, inside this surface.
+					return { handled: true };
+				}
+				if (event.button !== "left") return undefined;
+				const divider = currentWidths().primaryWidth + 1;
+				const capture = event.type === "press" && !collapsed && event.x === divider;
+				if (event.type === "click") {
+					const primaryHeight = withPrimaryViewport(computeBodyHeight(tui, options.height), 0).viewportHeight;
+					if (event.clickCount === 2 && event.x >= 1 && event.x < divider && event.y >= 1 && event.y <= primaryHeight && (options.primary.mode ?? "scroll") === "cursor") {
+						const bodyHeight = computeBodyHeight(tui, options.height);
+						const { primaryWidth, detailWidth } = currentWidths();
+						const selection = computeSelectionFromRows(getPrimaryRows(makeContext(0, undefined, "", primaryWidth, detailWidth)), bodyHeight);
+						const ctx = makeContext(selection.selectedIndex, selection.selectedRow, selection.selectedKey, primaryWidth, detailWidth);
+						const action = customActions.find((action) => matchesAny("\r", action.keys) && (!action.when || action.when(ctx)));
+						action?.run(ctx);
+						requestRender();
+					}
+					return { handled: true };
+				}
+				handleMouseEvent({ ...event, button: 0, press: event.type === "press", release: event.type === "release", motion: event.type === "drag" }, false);
+				return { handled: true, ...(capture ? { capture: true } : {}) };
+			},
+
 			dispose() {
 				if (primaryScrollbar.timer) clearTimeout(primaryScrollbar.timer);
 				if (detailScrollbar.timer) clearTimeout(detailScrollbar.timer);

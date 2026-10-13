@@ -639,6 +639,7 @@ test("ui.fullscreen temporarily replaces the fullscreen layout root without over
 	};
 	let dashboardRenders = 0;
 	const dashboardInputs = [];
+	const dashboardMouse = [];
 	let dashboardInvalidations = 0;
 	let dashboardDisposals = 0;
 	const dashboard = {
@@ -651,6 +652,7 @@ test("ui.fullscreen temporarily replaces the fullscreen layout root without over
 		handleInput(data) {
 			dashboardInputs.push(data);
 		},
+		handleMouse(event) { dashboardMouse.push(event); return { handled: true }; },
 		invalidate() {
 			dashboardInvalidations++;
 		},
@@ -665,6 +667,8 @@ test("ui.fullscreen temporarily replaces the fullscreen layout root without over
 		assert.deepEqual(tui.layoutRoot.render(80), ["dashboard"]);
 		assert.deepEqual(mounted.render(80), []);
 		mounted.handleInput("down");
+		assert.deepEqual(mounted.handleMouse({ type: "wheel", x: 4, y: 2 }), { handled: true });
+		assert.deepEqual(dashboardMouse, [{ type: "wheel", x: 4, y: 2 }]);
 		mounted.invalidate();
 		mounted.focused = true;
 		assert.equal(dashboard.focused, true);
@@ -1100,4 +1104,31 @@ test("logger supports silent level and maxBytes zero", () => {
 		{ level: "info", message: "first message that would rotate if maxBytes were active" },
 		{ level: "error", message: "second message that would rotate if maxBytes were active" },
 	]);
+});
+
+
+test("widget wrappers forward mouse with child offsets and captured drag", () => {
+	for (const coordinated of [false, true]) {
+		const bus = createBus();
+		const ctx = createCtx();
+		const pi = createPi(bus, ctx);
+		if (coordinated) registerWidgetHost(pi);
+		const client = connectWidgetCoordinator(pi, { ctx, clientId: "mouse-client" });
+		const received = [];
+		const first = { render: () => ["one", "two"], invalidate() {}, handleMouse: () => { throw new Error("wrong child"); } };
+		const second = { render: () => ["three"], invalidate() {}, handleMouse(event) { received.push(event); return { handled: true, capture: event.type === "press" }; } };
+		client.widgets.set("belowEditor", "first", () => first);
+		client.widgets.set("belowEditor", "second", () => second);
+		const wrapper = [...ctx.widgets.values()].at(-1).component;
+		wrapper.render(80);
+		const event = { type: "press", y: coordinated ? 2 : 0, x: 4, height: coordinated ? 3 : 1, screenY: 12 };
+		assert.equal(wrapper.handleMouse(event).capture, true);
+		assert.equal(received[0].y, 0);
+		assert.equal(received[0].height, 1);
+		assert.equal(received[0].screenY, 12);
+		wrapper.handleMouse({ ...event, type: "drag", y: 0 });
+		assert.equal(received[1].y, coordinated ? -2 : 0);
+		wrapper.handleMouse({ ...event, type: "release" });
+		client.dispose();
+	}
 });

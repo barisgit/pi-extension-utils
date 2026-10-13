@@ -100,6 +100,7 @@ export function connectWidgetCoordinator(pi: ExtensionAPI, opts: WidgetCoordinat
 				record.fallbackMount = mount;
 				return {
 					render: (width: number) => (mount.disposed ? [] : mount.component.render(width)),
+					handleMouse: (event) => mount.disposed ? undefined : mount.component.handleMouse?.(event),
 					invalidate: () => {
 						if (!mount.disposed) mount.component.invalidate?.();
 					},

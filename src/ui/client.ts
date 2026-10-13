@@ -1,3 +1,4 @@
+import type { TuiMouseEvent, TuiMouseEventResult } from "@earendil-works/pi-tui";
 export interface FullscreenLeaseLike {
 	release(): void;
 }
@@ -74,6 +75,7 @@ interface ComponentLike {
 	render(width: number): string[];
 	invalidate?(): void;
 	handleInput?(data: string): void;
+	handleMouse?(event: TuiMouseEvent): TuiMouseEventResult | undefined;
 	focused?: boolean;
 	wantsKeyRelease?: boolean;
 	dispose?(): void;
@@ -85,8 +87,8 @@ function getLayoutRootTui(tui: unknown): LayoutRootTui | undefined {
 	return tui as LayoutRootTui;
 }
 
-// Pi 0.84 exposes setLayoutRoot() but no getter. Its TypeScript-private
-// layoutRoot remains a runtime property; keep that compatibility bridge here.
+// Pi 1.2 exposes setLayoutRoot() but no getter. Its TypeScript-private
+// layoutRoot remains a runtime property; isolate that structural read here.
 function getLayoutRoot(tui: LayoutRootTui): unknown {
 	return tui.layoutRoot;
 }
@@ -97,6 +99,7 @@ function createOverlayInputProxy(component: unknown): ComponentLike {
 		render: () => [],
 		invalidate: () => target.invalidate?.(),
 		handleInput: (data) => target.handleInput?.(data),
+		handleMouse: (event) => target.handleMouse?.(event),
 		get wantsKeyRelease() {
 			return target.wantsKeyRelease;
 		},

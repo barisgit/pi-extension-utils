@@ -646,3 +646,31 @@ test("keyed cursor follows the selected row through reorder, insertion and remov
 		component.dispose();
 	}
 });
+
+test("normalized mouse selects, captures divider drag, activates double-click, and contains wheel", () => {
+	let activated: unknown;
+	const { component, render } = mount(baseOptions({
+		customActions: [{ keys: "return", label: "open", run: (ctx) => { activated = ctx.selectedRow; } }],
+		detail: { rows: () => Array.from({ length: 30 }, (_, i) => `line-${i}`) },
+	}));
+	const mouse = (type: import("@earendil-works/pi-tui").TuiMouseEventType, x: number, y: number, extra = {}) => {
+		const handler = (component as unknown as import("@earendil-works/pi-tui").Component).handleMouse;
+		assert.ok(handler, "pane must expose handleMouse");
+		return handler({ type, button: "left", x, y, screenX: x, screenY: y, width: 100, height: 24, shift: false, alt: false, ctrl: false, ...extra });
+	};
+	const initial = render();
+	mouse("press", 3, 2);
+	assert.ok(render().some((line) => line.includes("2/7")));
+	mouse("click", 3, 2, { clickCount: 2 });
+	assert.equal(activated, "beta");
+	const divider = initial[0].indexOf("┬");
+	assert.equal(mouse("press", divider, 2)?.capture, true);
+	mouse("drag", divider + 10, 2);
+	assert.ok(render()[0].indexOf("┬") > divider);
+	mouse("release", divider + 10, 2);
+	assert.equal(mouse("wheel", 90, 2, { wheelDelta: 3 })?.handled, true);
+	assert.ok(render()[1].includes("line-3"));
+	assert.equal(mouse("wheel", 90, 2, { wheelDelta: -100 })?.handled, true);
+	assert.ok(render()[1].includes("line-0"));
+	component.dispose();
+});
