@@ -10,7 +10,7 @@ Shared utility library for Pi extensions: widget coordination (host + client), f
 
 ## Source of truth and build
 
-- Library consumers import the compiled package (`main: ./dist/src/index.js`). Editing `src/` alone does not change what they import; run `npm run build` after source changes (`dist/` is gitignored — CI builds it during publish).
+- Pi extensions import `pi-extension-utils/pi`, whose TypeScript source entry keeps host peers inside jiti’s alias/virtual-module resolution. Ordinary Node consumers retain the compiled root (`main: ./dist/src/index.js`); run `npm run build` for those consumers (`dist/` is gitignored — CI builds it during publish). Keep both entries API-identical and ship the source entry in npm tarballs.
 - The Pi host entry is the TypeScript source `./index.ts` (Pi loads extensions through jiti). Pi Git installs run `git clean -fdx` and `npm install --omit=dev` without building, so the manifest must not point into `dist/`, and the npm `files` list must keep shipping `index.ts` and `src`.
 - `npm run typecheck` and `npm test` (node --test over `test/**/*.test.ts`) must pass before any release; `prepublishOnly` and the workflow both enforce them.
 

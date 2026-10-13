@@ -5,7 +5,9 @@ Shared utilities for Pi extensions that need coordinated UI, fullscreen custom U
 Two faces:
 
 - **Host extension** — `package.json` loads the TypeScript entry `./index.ts` once per Pi session, so Git installs work without a build step.
-- **Client library** — other extensions import from `pi-extension-utils`.
+- **Client library** — Pi extensions import from `pi-extension-utils/pi`. The root `pi-extension-utils` entry remains compiled JavaScript for ordinary Node consumers.
+
+The `/pi` entry lets Pi’s jiti loader resolve host peers through its aliases/virtual modules. Importing the compiled JavaScript root natively bypasses those aliases and can load another coding-agent and its dependency graph from the extension’s `node_modules`. Both entries expose the same API; no consumer build step is needed.
 
 ## Quick Start
 
@@ -24,7 +26,7 @@ Add the package to Pi settings so the host extension loads:
 Use the client from another extension:
 
 ```ts
-import { connect } from "pi-extension-utils";
+import { connect } from "pi-extension-utils/pi";
 
 const client = connect(pi, { ctx, clientId: "my-extension" });
 ```
@@ -43,7 +45,7 @@ const client = connect(pi, { ctx, clientId: "my-extension" });
 
 ```ts
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { connect, createLogger, paneOverlay } from "pi-extension-utils";
+import { connect, createLogger, paneOverlay } from "pi-extension-utils/pi";
 
 const log = createLogger("my-extension");
 
