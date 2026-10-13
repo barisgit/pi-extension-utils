@@ -49,7 +49,7 @@ await client.ui.fullscreen((tui, theme, keybindings, done) => new MyComponent(tu
 - uses the overlay path as the safe cold-start/fallback mount without rendering the real dashboard twice
 - releases the lease in `finally`
 
-Pi 0.84.x exposes the layout-root setter but no public getter, so exact restoration uses its runtime `layoutRoot` property through an isolated structural bridge. If a fullscreen TUI does not expose that setter/property shape, `ui.fullscreen()` safely falls back to the full-size overlay; that fallback cannot guarantee that terminal image placements from the transcript are cleared.
+Pi 1.2.0 exposes the layout-root setter but no public getter, so exact restoration uses its runtime `layoutRoot` property through an isolated structural bridge. If a fullscreen TUI does not expose that setter/property shape, `ui.fullscreen()` safely falls back to the full-size overlay; that fallback cannot guarantee that terminal image placements from the transcript are cleared.
 
 Use `client.fullscreen.acquire()` only when you need manual lease control.
 

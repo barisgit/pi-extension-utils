@@ -1,11 +1,7 @@
 /**
- * SGR (1006) mouse sequence parsing for pane overlays.
- *
- * In fullscreen TUI mode Pi defers wheel input to a focused overlay. Pi 0.84
- * still consumes non-wheel SGR mouse events before the overlay sees them, so
- * click and drag paths require a host that forwards those events. These helpers
- * turn forwarded sequences into structured events. Regular TUI mode remains
- * keyboard-only with zero changes at call sites.
+ * Parse synthetic/explicit SGR input accepted by pane overlays. Pi 1.2 fullscreen
+ * dispatch uses Component.handleMouse instead; consumers that synthesize wheel
+ * reports can still use this adapter through handleInput.
  */
 
 export interface SgrMouseEvent {
